@@ -1,0 +1,154 @@
+export const zh = {
+  app: {
+    name: "VulnGuard",
+    beta: "测试版",
+  },
+  nav: {
+    dashboard: "仪表盘",
+    newScan: "新建扫描",
+    scanHistory: "扫描历史",
+    reports: "安全报告",
+    settings: "设置",
+  },
+  header: {
+    newScan: "新建扫描",
+  },
+  common: {
+    loading: "加载中...",
+    noScans: "暂无扫描记录",
+    noHistory: "暂无历史记录",
+    failedToLoad: "加载失败",
+    scanNotFound: "该扫描可能不存在或发生了错误",
+  },
+  dashboard: {
+    totalScans: "总扫描数",
+    vulnerabilities: "漏洞发现",
+    secure: "安全通过",
+    riskScore: "风险评分",
+    changeWeek: "本周 +12%",
+    changeNew: "新增 3 个",
+    changeRate: "通过率 100%",
+    changeRisk: "中等风险",
+    trends: "漏洞趋势",
+    recentScans: "最近扫描",
+    viewAll: "查看全部",
+    target: "目标",
+    type: "类型",
+    status: "状态",
+    risk: "风险",
+    date: "日期",
+    completed: "已完成",
+    scanning: "扫描中",
+    secureLabel: "安全",
+    typeUrl: "URL",
+    typeSource: "源码",
+    minutes: "{{count}}分钟前",
+  },
+  days: {
+    mon: "周一",
+    tue: "周二",
+    wed: "周三",
+    thu: "周四",
+    fri: "周五",
+    sat: "周六",
+    sun: "周日",
+  },
+  scan: {
+    new: {
+      scanMode: "扫描模式",
+      scanModeDesc: "选择提交目标的方式进行安全分析",
+      urlScan: "URL 扫描",
+      urlScanDesc: "扫描在线网站的漏洞",
+      sourceScan: "源码扫描",
+      sourceScanDesc: "上传源码 (ZIP) 进行静态分析",
+      targetUrl: "目标网址",
+      uploadSource: "上传源码",
+      targetUrlDesc: "输入要扫描的网站 URL",
+      uploadSourceDesc: "上传包含源码的 ZIP 文件",
+      placeholder: "https://example.com",
+      scanBtn: "开始扫描",
+      dropZip: "将源码 ZIP 文件拖放到此处",
+      clickBrowse: "或点击浏览文件",
+      selectFile: "选择文件",
+      scanModules: "扫描模块",
+      scanModulesDesc: "选择要执行的安全检测",
+      moduleOwasp: "OWASP 十大漏洞",
+      moduleSca: "依赖安全",
+      moduleInfra: "基础设施配置",
+      moduleLogic: "业务逻辑",
+      moduleAttack: "抗攻击能力",
+      moduleQuality: "代码质量",
+      startScan: "开始安全扫描",
+    },
+    detail: {
+      scanReport: "扫描报告",
+      scanId: "扫描 ID",
+      completed: "已完成",
+      checksPerformed: "项检测完成",
+      riskScore: "风险评分",
+      passed: "通过",
+      vulnerabilities: "漏洞列表",
+      description: "漏洞描述",
+      fixRecommendation: "修复建议",
+    },
+    history: {
+      search: "搜索扫描记录...",
+      target: "目标",
+      type: "类型",
+      status: "状态",
+      risk: "风险",
+      date: "日期",
+      action: "操作",
+      viewReport: "查看报告",
+    },
+  },
+  reports: {
+    title: "安全报告",
+    empty: "暂无生成报告",
+    emptyDesc: "运行扫描后在此处查看报告",
+  },
+  ai: {
+    analysis: "AI 安全分析",
+    analysisDesc: "基于 DeepSeek 大语言模型的智能安全分析",
+    riskAssessment: "风险评估",
+    priorityFixes: "优先修复",
+    architectureRisks: "架构风险",
+    complianceNotes: "合规说明",
+    overallAdvice: "综合建议",
+    analyze: "开始 AI 分析",
+    analyzing: "AI 分析中...",
+    error: "AI 分析暂时不可用",
+    errorDesc: "DeepSeek API 服务异常，请稍后重试",
+    retry: "重试",
+  },
+  settings: {
+    title: "扫描配置",
+    desc: "配置默认扫描行为",
+    maxDuration: "最大扫描时长",
+    maxDurationDesc: "单次扫描的最大时间（分钟）",
+    autoReport: "自动生成报告",
+    autoReportDesc: "扫描完成后自动生成报告",
+    enabled: "已启用",
+    save: "保存更改",
+  },
+  severity: {
+    critical: "严重",
+    high: "高危",
+    medium: "中危",
+    low: "低危",
+  },
+}
+
+export type TranslationDict = typeof zh
+
+type Leaves<T> = T extends Record<string, unknown>
+  ? {
+      [K in keyof T]: K extends string
+        ? T[K] extends string
+          ? K
+          : `${K}.${Leaves<T[K]>}`
+        : never
+    }[keyof T]
+  : never
+
+export type I18nKey = Leaves<typeof zh>

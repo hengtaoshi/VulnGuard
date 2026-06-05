@@ -1,0 +1,82 @@
+rules:
+  - id: eval-detected
+    pattern: eval($EXPR)
+    message: Detected use of eval(). eval can lead to code injection attacks.
+    severity: ERROR
+    languages: [javascript, typescript]
+    metadata:
+      cwe: "CWE-95"
+
+  - id: exec-command
+    patterns:
+      - pattern-either:
+          - pattern: execSync($EXPR)
+          - pattern: exec($EXPR)
+          - pattern: execSync($EXPR, $ARGS)
+          - pattern: exec($EXPR, $ARGS)
+    message: Detected OS command execution. Ensure input is sanitized.
+    severity: ERROR
+    languages: [javascript, typescript]
+    metadata:
+      cwe: "CWE-78"
+
+  - id: hardcoded-credentials
+    patterns:
+      - pattern-either:
+          - pattern: |
+              $VAR = "password"
+          - pattern: |
+              $VAR = "passwd"
+          - pattern: |
+              $VAR = "secret"
+      - metavariable-regex:
+          metavariable: $VAR
+          regex: .*(password|passwd|secret|token|api.?key).*
+    message: Possible hardcoded credential detected.
+    severity: WARNING
+    languages: [javascript, typescript, python]
+    metadata:
+      cwe: "CWE-798"
+
+  - id: innerhtml-xss
+    pattern: |
+      $X.innerHTML = $Y
+    message: Detected innerHTML assignment. This can lead to XSS vulnerabilities. Use textContent instead.
+    severity: WARNING
+    languages: [javascript, typescript]
+    metadata:
+      cwe: "CWE-79"
+
+  - id: require-bind-shell
+    pattern: |
+      child_process.execSync($X)
+    message: execSync with unsanitized input can lead to command injection.
+    severity: ERROR
+    languages: [javascript, typescript]
+    metadata:
+      cwe: "CWE-78"
+
+  - id: no-cookie-httponly
+    patterns:
+      - pattern: |
+          $RES.cookie($NAME, $VALUE, $OPTIONS)
+      - pattern-not: |
+          $RES.cookie($NAME, $VALUE, { ...$OPTIONS, httpOnly: true })
+      - pattern-not: |
+          $RES.cookie($NAME, $VALUE, { ...$OPTIONS, httpOnly: True })
+    message: Cookie set without httpOnly flag, potentially vulnerable to XSS.
+    severity: WARNING
+    languages: [javascript, typescript]
+    metadata:
+      cwe: "CWE-1004"
+
+  - id: debug-mode
+    patterns:
+      - pattern-either:
+          - pattern: debug = true
+          - pattern: DEBUG = true
+    message: Debug mode enabled in production code.
+    severity: WARNING
+    languages: [javascript, typescript, python]
+    metadata:
+      cwe: "CWE-489"

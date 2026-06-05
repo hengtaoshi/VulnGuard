@@ -1,0 +1,60 @@
+id: file-misconfig-scan
+
+info:
+  name: File Misconfiguration Scanner
+  author: vulnguard
+  severity: info
+  description: Scans files for common security misconfigurations
+
+file:
+  - extensions:
+      - all
+
+    matchers:
+      - type: word
+        name: world-writable-permissions
+        patterns:
+          - "umask 000"
+          - "chmod 777"
+          - "chmod 0777"
+        condition: or
+        severity: high
+
+      - type: word
+        name: exposed-credentials
+        patterns:
+          - "password="
+          - "password ="
+          - "PASSWORD="
+          - "passwd="
+          - "db_password"
+          - "DB_PASSWORD"
+        condition: or
+        severity: high
+
+      - type: word
+        name: aws-key-detected
+        patterns:
+          - "AKIA[0-9A-Z]{16}"
+        condition: or
+        severity: critical
+
+      - type: word
+        name: private-key-detected
+        patterns:
+          - "-----BEGIN RSA PRIVATE KEY-----"
+          - "-----BEGIN DSA PRIVATE KEY-----"
+          - "-----BEGIN EC PRIVATE KEY-----"
+          - "-----BEGIN OPENSSH PRIVATE KEY-----"
+        condition: or
+        severity: critical
+
+      - type: word
+        name: debug-mode-enabled
+        patterns:
+          - "debug=true"
+          - "debug_mode=true"
+          - "DEBUG=true"
+          - "APP_DEBUG=true"
+        condition: or
+        severity: medium
