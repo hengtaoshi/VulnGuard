@@ -1,0 +1,11 @@
+{
+  "name": "test-target",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "express": "4.16.0",
+    "jsonwebtoken": "8.5.1",
+    "lodash": "4.17.20",
+    "debug": "2.6.9"
+  }
+}

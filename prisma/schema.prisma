@@ -1,0 +1,49 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Project {
+  id        String   @id @default(cuid())
+  name      String
+  target    String   // URL or filename
+  mode      String   // "url" | "source"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  scans     Scan[]
+}
+
+model Scan {
+  id              String          @id @default(cuid())
+  projectId       String
+  project         Project         @relation(fields: [projectId], references: [id])
+  status          String          @default("queued")  // queued, running, completed, failed
+  progress        Int             @default(0)
+  riskScore       String?         // A+, A, B+, B, C, D, F
+  totalVulns      Int             @default(0)
+  criticalCount   Int             @default(0)
+  highCount       Int             @default(0)
+  mediumCount     Int             @default(0)
+  lowCount        Int             @default(0)
+  createdAt       DateTime        @default(now())
+  completedAt     DateTime?
+  vulnerabilities Vulnerability[]
+}
+
+model Vulnerability {
+  id             String   @id @default(cuid())
+  scanId         String
+  scan           Scan     @relation(fields: [scanId], references: [id])
+  name           String
+  severity       String   // Critical, High, Medium, Low
+  location       String?  // File path or URL
+  cve            String?
+  description    String
+  recommendation String
+  codeFix        String?
+  createdAt      DateTime @default(now())
+}
