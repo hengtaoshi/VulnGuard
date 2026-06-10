@@ -1,8 +1,11 @@
-import { execSync } from "child_process"
+import { execSync, exec } from "child_process"
+import { promisify } from "util"
 import { join } from "path"
 import type { Vulnerability } from "@/lib/api/types"
 
+const SEMGREP_PATH = "C:\\Users\\SHT\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\semgrep.exe"
 const LOCAL_RULES = join(process.cwd(), "tools", "semgrep-rules", "security.yaml")
+const execAsync = promisify(exec)
 
 interface SemgrepResult {
   check_id: string
@@ -59,15 +62,19 @@ function generateRecommendation(severity: string, message: string, metadata: Sem
   return `建议修复: ${message.split(".")[0]}. 遵循安全编码规范进行整改。`
 }
 
-function runSemgrep(targetPath: string, retries = 1): { vulnerabilities: Vulnerability[], totalChecks: number } {
+async function runSemgrep(targetPath: string, retries = 1): Promise<{ vulnerabilities: Vulnerability[], totalChecks: number }> {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      const output = execSync(
-        `semgrep --config="${LOCAL_RULES}" --json --no-git-ignore --timeout=30 "${targetPath}"`,
-        { timeout: 120000, maxBuffer: 10 * 1024 * 1024, stdio: ["pipe", "pipe", "pipe"] },
+      const { stdout: stdoutBuf } = await execAsync(
+        `"${SEMGREP_PATH}" --config="${LOCAL_RULES}" --json --no-git-ignore --timeout=30 "${targetPath}"`,
+        {
+          timeout: 120000,
+          maxBuffer: 10 * 1024 * 1024,
+          env: { ...process.env, PYTHONUTF8: "1" },
+        },
       )
 
-      const stdout = output.toString().trim()
+      const stdout = stdoutBuf.trim()
       const jsonStart = stdout.indexOf("{")
       const jsonEnd = stdout.lastIndexOf("}")
       const jsonStr = jsonStart >= 0 && jsonEnd >= 0 ? stdout.slice(jsonStart, jsonEnd + 1) : stdout
@@ -105,13 +112,11 @@ function runSemgrep(targetPath: string, retries = 1): { vulnerabilities: Vulnera
         console.error(`Semgrep attempt ${attempt + 1} failed, retrying...`)
         continue
       }
-      if (err instanceof Error && "stderr" in err && typeof (err as { stderr: string }).stderr === "string") {
-        const stderr = (err as { stderr: string }).stderr
-        if (stderr.includes("semgrep: command not found") || stderr.includes("not recognized")) {
-          throw new Error("Semgrep is not installed. Run: pip install semgrep")
-        }
-        if (stderr) console.error("Semgrep stderr:", stderr)
+      const stderr = (err as { stderr?: string }).stderr || ""
+      if (stderr.includes("semgrep: command not found") || stderr.includes("not recognized")) {
+        throw new Error("Semgrep is not installed. Run: pip install semgrep")
       }
+      if (stderr) console.error("Semgrep stderr:", stderr)
       throw new Error(`Semgrep scan failed: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
@@ -129,14 +134,14 @@ export async function runSemgrepOnCode(codeContent: string, language: string): P
   vulnerabilities: Vulnerability[]
   totalChecks: number
 }> {
-  const tmpDir = `C:\\Users\\Administrator\\AppData\\Local\\Temp\\vulnguard-scan-${Date.now()}`
+  const tmpDir = join(require("os").tmpdir(), `vulnguard-scan-${Date.now()}`)
   try {
-    execSync(`mkdir "${tmpDir}"`, { timeout: 5000 })
+    require("fs").mkdirSync(tmpDir, { recursive: true })
     const ext = language === "javascript" ? "js" : language === "typescript" ? "ts" : language === "python" ? "py" : "txt"
-    const filePath = `${tmpDir}\\code.${ext}`
-    execSync(`echo ${JSON.stringify(codeContent).replace(/^"|"$/g, "")} > "${filePath}"`, { timeout: 5000, shell: "cmd.exe" })
+    const filePath = join(tmpDir, `code.${ext}`)
+    require("fs").writeFileSync(filePath, codeContent, "utf-8")
     return await runSemgrepScan(tmpDir)
   } finally {
-    execSync(`rmdir /s /q "${tmpDir}" 2>nul`, { timeout: 5000 })
+    try { require("fs").rmSync(tmpDir, { recursive: true, force: true }) } catch { /* ignore cleanup errors */ }
   }
 }

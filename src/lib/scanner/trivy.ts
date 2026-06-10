@@ -1,5 +1,6 @@
 import { execSync } from "child_process"
 import { join } from "path"
+import { existsSync, mkdirSync } from "fs"
 import type { Vulnerability } from "@/lib/api/types"
 import type { ScanResult } from "./types"
 
@@ -49,9 +50,22 @@ export async function runTrivyScan(targetPath: string): Promise<ScanResult> {
   }
 
   try {
+    // Ensure trivy cache directory exists
+    const trivyCacheDir = join(process.cwd(), ".trivy-cache")
+    if (!existsSync(trivyCacheDir)) {
+      try { mkdirSync(trivyCacheDir, { recursive: true }) } catch { /* ignore */ }
+    }
     const output = execSync(
-      `"${TRIVY_PATH}" fs --format=json --quiet --scanners misconfig,secret --skip-db-update --offline-scan "${targetPath}"`,
-      { timeout: 180000, maxBuffer: 50 * 1024 * 1024, stdio: ["pipe", "pipe", "pipe"] },
+      `"${TRIVY_PATH}" fs --format=json --quiet --scanners vuln,misconfig,secret --cache-dir "${trivyCacheDir}" "${targetPath}"`,
+      {
+        timeout: 300000,
+        maxBuffer: 50 * 1024 * 1024,
+        stdio: ["pipe", "pipe", "pipe"],
+        env: {
+          ...process.env,
+          TRIVY_DB_REPOSITORY: "ghcr.io/aquasecurity/trivy-db",
+        },
+      },
     )
 
     const stdout = output.toString().trim()

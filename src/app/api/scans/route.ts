@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
-import { getAllSessions, toScanSummary, createSession, updateSession } from "@/lib/scanner/scan-store"
+import { getAllSessions, toScanSummary, createSession, updateSession, clearSessions } from "@/lib/scanner/scan-store"
 import { runCompositeScan } from "@/lib/scanner/composite"
+import type { ScannerEngine } from "@/lib/scanner/composite"
 
 export async function GET() {
   const scans = getAllSessions().map(toScanSummary)
@@ -13,13 +14,14 @@ export async function POST(request: Request) {
     const body = await request.json()
     const mode = body.mode || "source"
     const target = body.target || body.url || "unknown"
+    const engine: ScannerEngine = body.engine || "ai"
 
     // Create scan session
     const session = createSession(mode, target)
-    updateSession(session.id, { status: "pending" })
+    updateSession(session.id, { status: "pending", scannerEngine: engine })
 
     // Run composite scan in the background (don't await)
-    runCompositeScan(target, mode, session.id)
+    runCompositeScan(target, mode, session.id, engine)
       .then(result => {
         const { vulnerabilities, totalChecks, scannerResults } = result
         const critical = vulnerabilities.filter(v => v.severity === "Critical").length
@@ -50,11 +52,16 @@ export async function POST(request: Request) {
 
     // Return immediately with the session ID
     return NextResponse.json(
-      { id: session.id, status: "pending", target: session.target, type: session.type },
+      { id: session.id, status: "pending", target: session.target, type: session.type, engine },
       { status: 201 },
     )
   } catch (err) {
     console.error("Create scan error:", err)
     return NextResponse.json({ error: "Failed to create scan" }, { status: 500 })
   }
+}
+
+export async function DELETE() {
+  clearSessions()
+  return NextResponse.json({ success: true })
 }

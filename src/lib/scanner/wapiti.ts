@@ -1,7 +1,10 @@
-import { execSync } from "child_process"
+import { execSync, exec } from "child_process"
+import { promisify } from "util"
 import { writeFileSync, unlinkSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
+
+const WAPITI_PATH = "C:\\Users\\SHT\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\wapiti.exe"
 import type { Vulnerability } from "@/lib/api/types"
 import type { ScanResult } from "./types"
 
@@ -37,6 +40,8 @@ interface WapitiReport {
     crawled_pages_nbr: number
   }
 }
+
+const execAsync = promisify(exec)
 
 const SEVERITY_MAP: Record<string, "Critical" | "High" | "Medium" | "Low"> = {
   "SQL Injection": "Critical",
@@ -112,7 +117,7 @@ function normalizeCategory(name: string): string {
 
 function isAvailable(): boolean {
   try {
-    execSync("wapiti --version", { stdio: "pipe", timeout: 5000 })
+    execSync(`"${WAPITI_PATH}" --version`, { stdio: "pipe", timeout: 5000 })
     return true
   } catch {
     return false
@@ -129,9 +134,10 @@ export async function runWapitiScan(targetUrl: string): Promise<ScanResult> {
 
   try {
     // Run wapiti with all modules for comprehensive coverage
-    execSync(
-      `wapiti -u "${targetUrl}" -f json -o "${outputFile}" --scope folder -m sql,xss,exec,file,backup,xxe,ssrf,ldap -d 2 --flush-attacks --flush-session --max-attack-time 60 --max-scan-time 120`,
-      { timeout: 300000, maxBuffer: 10 * 1024 * 1024, stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, NO_PROXY: "*", no_proxy: "*" } },
+    // Note: --max-attack-time was removed because older wapiti versions don't support it
+    await execAsync(
+      `"${WAPITI_PATH}" -u "${targetUrl}" -f json -o "${outputFile}" --scope folder -m sql,xss,exec,file,backup,xxe,ssrf,ldap,crlf,htaccess,methods,redirect -d 3 --flush-attacks --flush-session --max-scan-time 600`,
+      { timeout: 120000, maxBuffer: 10 * 1024 * 1024, env: { ...process.env, NO_PROXY: "*", no_proxy: "*", PYTHONUTF8: "1" } },
     )
 
     // Remove the HTML report that wapiti also generates alongside the JSON
