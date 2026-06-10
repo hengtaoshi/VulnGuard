@@ -8,7 +8,7 @@ node_modules/
 next-env.d.ts
 dist/
 .scans/
-.superpowers/
+
 .trivy-cache/
 tools/bin/*.exe
 tools/wordlists/
