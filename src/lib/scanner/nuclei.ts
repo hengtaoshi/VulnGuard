@@ -1,7 +1,7 @@
 import { execSync } from "child_process"
 import { join } from "path"
-import { existsSync, writeFileSync, readdirSync, statSync } from "fs"
-import { homedir, tmpdir } from "os"
+import { existsSync, readdirSync, mkdirSync } from "fs"
+import { homedir } from "os"
 import type { Vulnerability } from "@/lib/api/types"
 import type { ScanResult } from "./types"
 
@@ -19,6 +19,7 @@ interface NucleiFinding {
 
 const NUCLEI_PATH = join(process.cwd(), "tools", "bin", "nuclei.exe")
 const CUSTOM_TEMPLATES = join(process.cwd(), "tools", "nuclei-templates")
+const HOME_TEMPLATES = join(homedir(), "nuclei-templates")
 
 function severityMap(sev: string): "Critical" | "High" | "Medium" | "Low" {
   switch (sev) {
@@ -52,24 +53,43 @@ function collectTemplates(dir: string): string[] {
         results.push(full)
       }
     }
-  } catch { /* ignore unreadable directories */ }
+  } catch {
+    /* ignore unreadable directories */
+  }
   return results
 }
 
-function resolveTemplateArg(): string {
-  // Try full template repo in user home
-  const homeTemplates = join(homedir(), "nuclei-templates")
-  if (existsSync(homeTemplates)) {
-    const templates = collectTemplates(homeTemplates)
-    if (templates.length > 0) {
-      return `-t "${join(homeTemplates, "file")}"`
+/**
+ * Auto-update nuclei templates if the template directory doesn't exist.
+ * Returns true if templates are available after the attempt.
+ */
+function ensureTemplates(): boolean {
+  // Already have templates in home dir
+  if (existsSync(HOME_TEMPLATES)) {
+    const count = collectTemplates(HOME_TEMPLATES).length
+    if (count > 0) return true
+  }
+
+  // Try to update templates (silent, don't block)
+  try {
+    execSync(`"${NUCLEI_PATH}" -update-templates`, {
+      stdio: "pipe",
+      timeout: 120000,
+    })
+    // After update, check if templates are now available
+    if (existsSync(HOME_TEMPLATES)) {
+      return collectTemplates(HOME_TEMPLATES).length > 0
     }
+  } catch {
+    /* template update failed, continue with bundled templates */
   }
-  // Fallback to bundled custom templates
+
+  // Fallback: check bundled templates
   if (existsSync(CUSTOM_TEMPLATES)) {
-    return `-t "${CUSTOM_TEMPLATES}"`
+    return collectTemplates(CUSTOM_TEMPLATES).length > 0
   }
-  return ""
+
+  return false
 }
 
 export async function runNucleiScan(targetPath: string): Promise<ScanResult> {
@@ -78,15 +98,68 @@ export async function runNucleiScan(targetPath: string): Promise<ScanResult> {
     return { vulnerabilities: [], totalChecks: 0, errors: ["Nuclei not found"], scannerName }
   }
 
-  const templateArg = resolveTemplateArg()
-  if (!templateArg) {
-    return { vulnerabilities: [], totalChecks: 0, errors: ["No Nuclei templates found"], scannerName }
+  const isUrl = targetPath.startsWith("http://") || targetPath.startsWith("https://")
+
+  // URL mode: scan web targets using Nuclei's built-in HTTP/web templates
+  if (isUrl) {
+    try {
+      const output = execSync(
+        `"${NUCLEI_PATH}" -target "${targetPath}" -j -silent -duc -severity low,medium,high,critical`,
+        { timeout: 120000, maxBuffer: 50 * 1024 * 1024, stdio: ["pipe", "pipe", "pipe"] },
+      )
+
+      const lines = output.toString().trim().split("\n").filter(Boolean)
+      const vulnerabilities: Vulnerability[] = []
+
+      for (const line of lines) {
+        try {
+          const f: NucleiFinding = JSON.parse(line)
+          vulnerabilities.push({
+            id: `NUCLEI-${vulnerabilities.length + 1}`,
+            name: f.templateInfo?.name || f.templateID || "Security finding",
+            severity: severityMap(f.severity || f.templateInfo?.severity || "medium"),
+            location: f.path || f.matchedAt || targetPath,
+            cve: f.templateID || "Nuclei",
+            description: f.info?.description || f.description || f.templateInfo?.description || `Matched at ${f.matchedAt}`,
+            recommendation: f.info?.remediation || f.info?.reference || `Review ${f.templateID}`,
+            source: "nuclei",
+          })
+        } catch {
+          // skip malformed JSON lines
+        }
+      }
+
+      const totalChecks = Math.max(vulnerabilities.length + 50, 50)
+      return { vulnerabilities, totalChecks, errors: [], scannerName }
+    } catch (err: unknown) {
+      return {
+        vulnerabilities: [],
+        totalChecks: 0,
+        errors: [`Nuclei URL scan failed: ${err instanceof Error ? err.message : String(err)}`],
+        scannerName,
+      }
+    }
+  }
+
+  // Source/file mode: try file-based templates
+  const hasTemplates = ensureTemplates()
+  if (!hasTemplates) {
+    return {
+      vulnerabilities: [],
+      totalChecks: 0,
+      errors: ["Nuclei file scan skipped: no file templates available. Run nuclei -update-templates to download templates."],
+      scannerName,
+    }
   }
 
   try {
+    const templateArg = existsSync(HOME_TEMPLATES) && collectTemplates(HOME_TEMPLATES).length > 0
+      ? `-t "${HOME_TEMPLATES}"`
+      : `-t "${CUSTOM_TEMPLATES}"`
+
     const output = execSync(
       `"${NUCLEI_PATH}" -target "${targetPath}" -j -silent -duc -file -severity low,medium,high,critical ${templateArg}`,
-      { timeout: 60000, maxBuffer: 50 * 1024 * 1024, stdio: ["pipe", "pipe", "pipe"] },
+      { timeout: 120000, maxBuffer: 50 * 1024 * 1024, stdio: ["pipe", "pipe", "pipe"] },
     )
 
     const lines = output.toString().trim().split("\n").filter(Boolean)
@@ -110,13 +183,13 @@ export async function runNucleiScan(targetPath: string): Promise<ScanResult> {
       }
     }
 
-    const totalChecks = vulnerabilities.length > 0 ? vulnerabilities.length + 50 : 50
+    const totalChecks = Math.max(vulnerabilities.length + 50, 50)
     return { vulnerabilities, totalChecks, errors: [], scannerName }
   } catch (err: unknown) {
     return {
       vulnerabilities: [],
       totalChecks: 0,
-      errors: [`Nuclei scan failed: ${err instanceof Error ? err.message : String(err)}`],
+      errors: [`Nuclei file scan failed: ${err instanceof Error ? err.message : String(err)}`],
       scannerName,
     }
   }

@@ -50,3 +50,15 @@ export async function getLLMAnalysis(data: {
     overallAdvice: string
   }>
 }
+
+export async function deleteScan(id: string) {
+  const res = await fetch(`${BASE_URL}/scans/${id}`, { method: "DELETE" })
+  if (!res.ok) throw new Error(`API error: ${res.status}`)
+  return res.json()
+}
+
+export async function clearScans() {
+  const res = await fetch(`${BASE_URL}/scans`, { method: "DELETE" })
+  if (!res.ok) throw new Error(`API error: ${res.status}`)
+  return res.json()
+}
