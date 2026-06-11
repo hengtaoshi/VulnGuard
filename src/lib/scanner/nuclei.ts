@@ -108,9 +108,15 @@ export async function runNucleiScan(targetPath: string): Promise<ScanResult> {
   }
 
   try {
-    const templateArg = existsSync(HOME_TEMPLATES) && collectTemplates(HOME_TEMPLATES).length > 0
-      ? `-t "${HOME_TEMPLATES}"`
-      : `-t "${CUSTOM_TEMPLATES}"`
+    // 只使用 file/ 子目录（纯文件内容匹配），避免加载 code/ 的 shell 脚本模板和 10000+ 网络模板导致卡死
+    let templateArg: string
+    if (existsSync(HOME_TEMPLATES) && existsSync(join(HOME_TEMPLATES, "file"))) {
+      templateArg = `-t "${join(HOME_TEMPLATES, "file")}"`
+    } else if (existsSync(CUSTOM_TEMPLATES)) {
+      templateArg = `-t "${CUSTOM_TEMPLATES}"`
+    } else {
+      templateArg = ""
+    }
 
     const { stdout } = await execAsync(
       `"${NUCLEI_PATH}" -target "${targetPath}" -j -silent -duc -file -severity low,medium,high,critical ${templateArg}`,

@@ -50,7 +50,7 @@ export async function runCheckovScan(targetPath: string): Promise<ScanResult> {
 
   try {
     const { stdout } = await execAsync(
-      `checkov -d "${targetPath}" --framework terraform kubernetes dockerfile --output json`,
+      `checkov -d "${targetPath.replace(/\\/g, "/")}" --framework terraform kubernetes dockerfile cloudformation --output json`,
       { timeout: 120000, maxBuffer: 10 * 1024 * 1024 },
     )
     rawJson = stdout.trim()
@@ -69,13 +69,31 @@ export async function runCheckovScan(targetPath: string): Promise<ScanResult> {
   }
 
   try {
-    const jsonStart = rawJson.indexOf("{")
-    const jsonEnd = rawJson.lastIndexOf("}")
-    if (jsonStart < 0 || jsonEnd < 0) {
-      return { vulnerabilities: [], totalChecks: 0, errors: [], scannerName }
+    // Checkov may output a JSON array [{...},{...},{...}] or a single object {...}
+    const trimmed = rawJson.trim()
+    let parsed: any
+
+    if (trimmed.startsWith("[")) {
+      // Array format — combine all results
+      const reports: CheckovReport[] = JSON.parse(trimmed)
+      // Merge passed/failed checks from all reports
+      const allFailed: CheckovReport["results"]["failed_checks"] = []
+      const allPassed: CheckovReport["results"]["passed_checks"] = []
+      for (const r of reports) {
+        if (r.results?.failed_checks) allFailed.push(...r.results.failed_checks)
+        if (r.results?.passed_checks) allPassed.push(...r.results.passed_checks)
+      }
+      parsed = { check_type: "merged", results: { failed_checks: allFailed, passed_checks: allPassed } }
+    } else {
+      const jsonStart = trimmed.indexOf("{")
+      const jsonEnd = trimmed.lastIndexOf("}")
+      if (jsonStart < 0 || jsonEnd < 0) {
+        return { vulnerabilities: [], totalChecks: 0, errors: [], scannerName }
+      }
+      parsed = JSON.parse(trimmed.slice(jsonStart, jsonEnd + 1))
     }
 
-    const report: CheckovReport = JSON.parse(rawJson.slice(jsonStart, jsonEnd + 1))
+    const report: CheckovReport = parsed
     const failed = report.results?.failed_checks || []
     const passed = report.results?.passed_checks || []
 

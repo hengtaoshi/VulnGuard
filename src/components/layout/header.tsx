@@ -1,6 +1,6 @@
 "use client"
 
-import { Bell, Plus, Languages, Menu } from "lucide-react"
+import { Plus, Languages, Menu } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { usePathname } from "next/navigation"
 import Link from "next/link"
@@ -57,13 +57,7 @@ export function Header({ onMenuClick }: HeaderProps) {
             </Button>
           </Link>
         )}
-        <button className="relative p-2 text-muted-foreground hover:text-foreground transition-colors" aria-label="Notifications">
-          <Bell className="h-5 w-5" />
-          <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-destructive" />
-        </button>
-        <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center text-sm font-medium text-primary" role="img" aria-label="User avatar">
-          U
-        </div>
+
       </div>
     </header>
   )

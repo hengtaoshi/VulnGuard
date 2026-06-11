@@ -11,8 +11,13 @@ import { runTrivyScan } from "./trivy"
 import { runBanditScan } from "./bandit"
 import { runCheckovScan } from "./checkov"
 import { runNucleiScan } from "./nuclei"
-import { runDependencyCheckScan } from "./dependency-check"
 import { runAIScan } from "./ai-scanner"
+import { runCveCppScan } from "./cve-cpp-scanner"
+import { runSwiftScan } from "./swift-scanner"
+import { runTrufflehogScan } from "./trufflehog-scanner"
+import { runBearerScan } from "./bearer-scanner"
+import { runScorecardScan } from "./scorecard-scanner"
+import { runOsvScan } from "./osv-scanner"
 
 const TOOLS_BIN = join(process.cwd(), "tools", "bin")
 
@@ -129,21 +134,18 @@ const scanners: Scanner[] = [
     scan: runNucleiScan,
   },
   {
-    name: "dependency-check",
-    displayName: "Dependency-Check",
+    name: "cve-cpp",
+    displayName: "C/C++ CVE Scanner",
     category: "dependency",
-    isAvailable: () => {
-      const { existsSync } = require("fs") as typeof import("fs")
-      const { join } = require("path") as typeof import("path")
-      const CWD = process.cwd()
-      const bat = join(CWD, "tools", "bin", "dependency-check.bat")
-      if (existsSync(bat)) return true
-      try {
-        execSync("dependency-check --version 2>&1", { stdio: "pipe", timeout: 5000 })
-        return true
-      } catch { return false }
-    },
-    scan: runDependencyCheckScan,
+    isAvailable: () => true,
+    scan: (targetPath: string) => runCveCppScan(targetPath),
+  },
+  {
+    name: "swift",
+    displayName: "Swift Package Scanner",
+    category: "dependency",
+    isAvailable: () => true,
+    scan: (targetPath: string) => runSwiftScan(targetPath),
   },
   {
     name: "ai-scanner",
@@ -153,6 +155,46 @@ const scanners: Scanner[] = [
       return !!process.env.DEEPSEEK_API_KEY
     },
     scan: (targetPath: string) => runAIScan(targetPath),
+  },
+  {
+    name: "trufflehog",
+    displayName: "TruffleHog",
+    category: "secret",
+    isAvailable: () => {
+      const { existsSync } = require("fs") as typeof import("fs")
+      return existsSync(join(TOOLS_BIN, "trufflehog.exe"))
+    },
+    scan: (targetPath: string) => runTrufflehogScan(targetPath),
+  },
+  {
+    name: "bearer",
+    displayName: "Bearer",
+    category: "sast",
+    isAvailable: () => {
+      // Bearer 没有 Windows 版本，只在 Linux/macOS 生效
+      return process.platform !== "win32"
+    },
+    scan: (targetPath: string) => runBearerScan(targetPath),
+  },
+  {
+    name: "scorecard",
+    displayName: "OpenSSF Scorecard",
+    category: "sast",
+    isAvailable: () => {
+      const { existsSync } = require("fs") as typeof import("fs")
+      return existsSync(join(TOOLS_BIN, "scorecard.exe"))
+    },
+    scan: (targetPath: string) => runScorecardScan(targetPath),
+  },
+  {
+    name: "osv-scanner",
+    displayName: "OSV-Scanner",
+    category: "dependency",
+    isAvailable: () => {
+      const { existsSync } = require("fs") as typeof import("fs")
+      return existsSync(join(TOOLS_BIN, "osv-scanner.exe"))
+    },
+    scan: (targetPath: string) => runOsvScan(targetPath),
   },
 ]
 

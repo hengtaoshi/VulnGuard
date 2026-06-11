@@ -1,0 +1,115 @@
+# VulnGuard Security Scan
+# 自动执行安全扫描：PR 触发 + 每周定时扫描
+# 需要设置以下 Secrets:
+#   VULNGUARD_API_URL  - VulnGuard 服务地址 (默认 http://localhost:3000)
+#   VULNGUARD_API_KEY  - API 密钥（如有）
+#   WEBHOOK_URL        - 扫描完成通知地址 (可选)
+
+name: VulnGuard Security Scan
+
+on:
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'src/**'
+      - 'package.json'
+      - 'requirements.txt'
+      - 'go.mod'
+      - 'pom.xml'
+      - 'Cargo.toml'
+  schedule:
+    # 每周一 02:00 自动扫描
+    - cron: '0 2 * * 1'
+  workflow_dispatch:
+    # 支持手动触发
+
+jobs:
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Start VulnGuard server
+        run: |
+          npm run build
+          npm start &
+          sleep 5
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Run security scan
+        id: scan
+        run: |
+          SCAN_RESULT=$(curl -s -X POST "${{ secrets.VULNGUARD_API_URL || 'http://localhost:3000' }}/api/scans" \
+            -H "Content-Type: application/json" \
+            -d "{\"target\":\"${{ github.workspace }}\",\"mode\":\"source\",\"engine\":\"ai\"}")
+          SCAN_ID=$(echo "$SCAN_RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+          echo "scan_id=$SCAN_ID" >> $GITHUB_OUTPUT
+
+          # 轮询等待扫描完成
+          for i in $(seq 1 60); do
+            RESULT=$(curl -s "http://localhost:3000/api/scans/$SCAN_ID")
+            STATUS=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin)['status'])")
+            if [ "$STATUS" = "completed" ] || [ "$STATUS" = "failed" ]; then
+              echo "$RESULT" > scan-result.json
+              break
+            fi
+            sleep 5
+          done
+
+      - name: Upload SARIF to GitHub
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: scan-result.sarif
+        continue-on-error: true
+
+      - name: Post scan summary to PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const result = JSON.parse(fs.readFileSync('scan-result.json', 'utf8'));
+            const summary = result.summary || {};
+            const body = `## 🔒 VulnGuard Security Scan Results
+            | Severity | Count |
+            |---|---|
+            | Critical | ${summary.critical || 0} |
+            | High | ${summary.high || 0} |
+            | Medium | ${summary.medium || 0} |
+            | Low | ${summary.low || 0} |
+            **Risk Score**: ${result.riskScore || '—'}
+
+            [View full report](${{ secrets.VULNGUARD_API_URL || 'http://localhost:3000' }}/scan/${result.id})
+            `;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+      - name: Send webhook notification
+        if: env.WEBHOOK_URL
+        run: |
+          curl -s -X POST "${{ secrets.WEBHOOK_URL }}" \
+            -H "Content-Type: application/json" \
+            -d @scan-result.json

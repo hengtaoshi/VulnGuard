@@ -2,17 +2,6 @@ import { execAsync } from "./exec"
 import type { Vulnerability } from "@/lib/api/types"
 import type { ScanResult } from "./types"
 
-interface PipAuditFinding {
-  name: string
-  version: string
-  vulnerability: {
-    id: string
-    description: string
-    severity?: { cvssv3?: { score?: number } }
-    fix_versions: string[]
-  }
-}
-
 function severityFromScore(score?: number): "Critical" | "High" | "Medium" | "Low" {
   if (!score) return "Medium"
   if (score >= 9) return "Critical"
@@ -38,18 +27,27 @@ export async function runPipAuditScan(targetPath: string): Promise<ScanResult> {
   }
 
   try {
-    const requirementsPath = `${targetPath}/requirements.txt`
-    // Check if requirements.txt exists first
-    try {
-      await execAsync(`test -f "${requirementsPath}" || dir "${requirementsPath}" 2>nul`, { timeout: 5000 })
-    } catch {
+    const requirementsPath = `${targetPath.replace(/\\/g, "/")}/requirements.txt`
+    // Check if requirements.txt exists
+    const fs = require("fs") as typeof import("fs")
+    if (!fs.existsSync(requirementsPath)) {
       return { vulnerabilities: [], totalChecks: 0, errors: [], scannerName }
     }
 
-    const { stdout } = await execAsync(
-      `pip-audit --requirement "${requirementsPath}" --format=json`,
-      { timeout: 60000, maxBuffer: 10 * 1024 * 1024 },
-    )
+    let stdout = ""
+    try {
+      const r = await execAsync(
+        `pip-audit --requirement "${requirementsPath.replace(/\\/g, "/")}" --format=json`,
+        { timeout: 60000, maxBuffer: 10 * 1024 * 1024 },
+      )
+      stdout = r.stdout
+    } catch (err: unknown) {
+      // pip-audit exits non-zero when vulnerabilities are found
+      if (err && typeof err === "object" && "stdout" in err) {
+        stdout = (err as { stdout: string }).stdout || ""
+      }
+      if (!stdout) throw err
+    }
 
     const trimmed = stdout.trim()
     const jsonStart = trimmed.indexOf("{")
@@ -59,32 +57,34 @@ export async function runPipAuditScan(targetPath: string): Promise<ScanResult> {
     }
 
     const parsed = JSON.parse(trimmed.slice(jsonStart, jsonEnd + 1))
-    const findings: PipAuditFinding[] = parsed.dependencies || []
+    const dependencies: { name: string; version: string; vulns?: { id: string; description: string; fix_versions: string[]; severity?: { cvssv3?: { score?: number } } }[] }[] = parsed.dependencies || []
 
     const vulnerabilities: Vulnerability[] = []
 
-    for (const dep of findings) {
-      if (!dep.vulnerability) continue
-      const v = dep.vulnerability
-      const sev = severityFromScore(v.severity?.cvssv3?.score)
+    for (const dep of dependencies) {
+      const vulns = dep.vulns || []
+      for (const v of vulns) {
+        if (!v.id) continue
+        const sev = severityFromScore(v.severity?.cvssv3?.score)
 
-      vulnerabilities.push({
-        id: v.id || `PIP-${dep.name}`,
-        name: `Vulnerable package: ${dep.name}`,
-        severity: sev,
-        location: `${dep.name}@${dep.version}`,
-        cve: v.id || "CVE-Pending",
-        description: v.description || `${dep.name} ${dep.version} has known vulnerabilities`,
-        recommendation: v.fix_versions?.length > 0
-          ? `Upgrade ${dep.name} from ${dep.version} to ${v.fix_versions.join(" or ")}`
-          : `Update ${dep.name} to a patched version`,
-        source: "pip-audit",
-      })
+        vulnerabilities.push({
+          id: v.id,
+          name: `${dep.name}: ${v.id}`,
+          severity: sev,
+          location: `${dep.name}@${dep.version}`,
+          cve: v.id || "CVE-Pending",
+          description: v.description || `${dep.name} ${dep.version} has known vulnerabilities`,
+          recommendation: v.fix_versions?.length > 0
+            ? `Upgrade ${dep.name} from ${dep.version} to ${v.fix_versions.join(" or ")}`
+            : `Update ${dep.name} to a patched version`,
+          source: "pip-audit",
+        })
+      }
     }
 
     return {
       vulnerabilities,
-      totalChecks: findings.length + 20,
+      totalChecks: dependencies.length + 20,
       errors: [],
       scannerName,
     }
