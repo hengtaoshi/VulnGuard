@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, unlinkSync } from "fs"
 import { join } from "path"
-import type { ScanDetail, ScanSummary, Vulnerability, ScannerInfo, ScanProgress } from "@/lib/api/types"
+import type { ScanDetail, ScanSummary, Vulnerability, ScannerInfo, ScanProgress, LogEntry, ScannerEngine } from "@/lib/api/types"
 
 export interface ScanSession {
   id: string
@@ -9,11 +9,43 @@ export interface ScanSession {
   status: "pending" | "scanning" | "completed" | "failed"
   riskScore: string
   totalChecks: number
+  scannerEngine?: ScannerEngine
   summary: { critical: number; high: number; medium: number; low: number; passed: number }
   vulnerabilities: Vulnerability[]
   scanners?: ScannerInfo[]
   progress?: ScanProgress
+  orchestratorPlan?: any
+  /** Full aggregation report from AI (detailed findings with confidence, correlation) */
+  aiAggregationReport?: any
+  /** Summary of AI aggregation for API responses */
+  aiAggregation?: {
+    totalFindings: number
+    falsePositivesRemoved: number
+    highConfidence: number
+    mediumConfidence: number
+    lowConfidence: number
+    correlatedFindings: number
+    summary: string
+    priorityActions: string[]
+  }
+  /** Dynamic escalation info (when deep scanners are auto-added) */
+  dynamicEscalation?: {
+    reason: string
+    scannersAdded: string[]
+    totalVulnsFound: number
+  }
+  /** Crawl data: discovered pages and sitemap */
+  crawlData?: {
+    totalPages: number
+    totalForms: number
+    totalPasswordFields: number
+    totalFileUploads: number
+    sitemap: { url: string; title: string; depth: number }[]
+    durationMs: number
+  }
   error?: string
+  /** Structured scan activity log for debugging */
+  logs?: LogEntry[]
   createdAt: string
 }
 
@@ -89,6 +121,13 @@ export function getAllSessions(): ScanSession[] {
   }
 }
 
+export function deleteSession(id: string): boolean {
+  const path = filePath(id)
+  if (!existsSync(path)) return false
+  unlinkSync(path)
+  return true
+}
+
 export function clearSessions() {
   ensureDir()
   for (const f of readdirSync(STORAGE_DIR)) {
@@ -97,6 +136,7 @@ export function clearSessions() {
 }
 
 export function toScanSummary(session: ScanSession): ScanSummary {
+  const hasResults = session.summary.critical > 0 || session.summary.high > 0 || session.summary.medium > 0 || session.summary.low > 0
   return {
     id: session.id,
     target: session.target,
@@ -104,6 +144,8 @@ export function toScanSummary(session: ScanSession): ScanSummary {
     status: session.status,
     risk: session.riskScore || "—",
     date: session.createdAt,
+    engine: session.scannerEngine,
+    summary: hasResults ? session.summary : undefined,
   }
 }
 
@@ -114,9 +156,16 @@ export function toScanDetail(session: ScanSession): ScanDetail {
     status: session.status,
     riskScore: session.riskScore,
     totalChecks: session.totalChecks,
+    engine: session.scannerEngine,
     summary: session.summary,
     vulnerabilities: session.vulnerabilities,
     scanners: session.scanners,
     progress: session.progress,
+    aiAggregation: session.aiAggregation,
+    orchestratorPlan: session.orchestratorPlan,
+    dynamicEscalation: session.dynamicEscalation,
+    crawlData: session.crawlData,
+    logs: session.logs,
+    createdAt: session.createdAt,
   }
 }

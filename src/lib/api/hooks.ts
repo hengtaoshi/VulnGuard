@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { getScans, getScanDetail, getStats, createScan, getLLMAnalysis } from "./client"
+import { getScans, getScanDetail, getStats, createScan, getLLMAnalysis, deleteScan, clearScans } from "./client"
 import type { ScanSummary, ScanDetail, DashboardStats } from "./types"
 
 export function useScans() {
@@ -38,5 +38,27 @@ export function useCreateScan() {
 export function useLLMAnalysis() {
   return useMutation({
     mutationFn: getLLMAnalysis,
+  })
+}
+
+export function useDeleteScan() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: deleteScan,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["scans"] })
+      queryClient.invalidateQueries({ queryKey: ["stats"] })
+    },
+  })
+}
+
+export function useClearScans() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: clearScans,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["scans"] })
+      queryClient.invalidateQueries({ queryKey: ["stats"] })
+    },
   })
 }
