@@ -1,5 +1,5 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, unlinkSync } from "fs"
-import { join } from "path"
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, unlinkSync, rmSync } from "fs"
+import { join, normalize } from "path"
 import type { ScanDetail, ScanSummary, Vulnerability, ScannerInfo, ScanProgress, LogEntry, ScannerEngine } from "@/lib/api/types"
 
 export interface ScanSession {
@@ -28,21 +28,7 @@ export interface ScanSession {
     summary: string
     priorityActions: string[]
   }
-  /** Dynamic escalation info (when deep scanners are auto-added) */
-  dynamicEscalation?: {
-    reason: string
-    scannersAdded: string[]
-    totalVulnsFound: number
-  }
-  /** Crawl data: discovered pages and sitemap */
-  crawlData?: {
-    totalPages: number
-    totalForms: number
-    totalPasswordFields: number
-    totalFileUploads: number
-    sitemap: { url: string; title: string; depth: number }[]
-    durationMs: number
-  }
+
   error?: string
   /** Structured scan activity log for debugging */
   logs?: LogEntry[]
@@ -67,12 +53,12 @@ function generateId(): string {
   return `scan-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
 }
 
-export function createSession(type: "url" | "source", target: string): ScanSession {
+export function createSession(_type: "url" | "source", target: string): ScanSession {
   ensureDir()
   const session: ScanSession = {
     id: generateId(),
     target,
-    type,
+    type: "source",
     status: "pending",
     riskScore: "—",
     totalChecks: 0,
@@ -163,9 +149,52 @@ export function toScanDetail(session: ScanSession): ScanDetail {
     progress: session.progress,
     aiAggregation: session.aiAggregation,
     orchestratorPlan: session.orchestratorPlan,
-    dynamicEscalation: session.dynamicEscalation,
-    crawlData: session.crawlData,
     logs: session.logs,
     createdAt: session.createdAt,
+  }
+}
+
+/**
+ * 判断目标路径是否为上传目录，若是则递归删除
+ */
+const UPLOAD_BASE = normalize(join(process.cwd(), "data", "uploads"))
+
+function isUploadDir(targetPath: string): boolean {
+  try {
+    const normalized = normalize(targetPath)
+    return normalized.startsWith(UPLOAD_BASE) && existsSync(normalized)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 扫描完成后清理上传目录
+ */
+export function cleanupUploadDir(targetPath: string): void {
+  if (!isUploadDir(targetPath)) return
+  try {
+    rmSync(targetPath, { recursive: true, force: true })
+    console.log(`[cleanup] Deleted upload directory: ${targetPath}`)
+  } catch (err) {
+    console.warn(`[cleanup] Failed to delete upload directory ${targetPath}:`, err)
+  }
+}
+
+/**
+ * 清理所有上传目录（清空 data/uploads/ 下所有子目录）
+ */
+export function clearAllUploads(): void {
+  try {
+    if (!existsSync(UPLOAD_BASE)) return
+    for (const entry of readdirSync(UPLOAD_BASE)) {
+      const fullPath = join(UPLOAD_BASE, entry)
+      try {
+        rmSync(fullPath, { recursive: true, force: true })
+      } catch { /* ignore per-file errors */ }
+    }
+    console.log(`[cleanup] All upload directories cleared`)
+  } catch (err) {
+    console.warn(`[cleanup] Failed to clear uploads:`, err)
   }
 }

@@ -19,7 +19,6 @@ export default function ScanHistoryPage() {
   const [confirmClear, setConfirmClear] = useState(false)
 
   const typeLabels: Record<string, string> = {
-    url: t("dashboard.typeUrl"),
     source: t("dashboard.typeSource"),
   }
   const statusLabels: Record<string, string> = {

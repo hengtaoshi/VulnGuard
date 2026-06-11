@@ -1,0 +1,51 @@
+<%- include('_header', { title: '博客', path: '/blog' }) %>
+
+<section class="container blog-list">
+  <h1 class="section-title">安全研究博客</h1>
+
+  <!-- Filter/Search bar — category parameter is vulnerable to SQLi -->
+  <form class="filter-bar" action="/blog" method="GET">
+    <select name="category">
+      <option value="">所有分类</option>
+      <option value="web安全" <%= (typeof category !== 'undefined' && category === 'web安全') ? 'selected' : '' %>>Web安全</option>
+      <option value="渗透测试" <%= (typeof category !== 'undefined' && category === '渗透测试') ? 'selected' : '' %>>渗透测试</option>
+      <option value="安全态势" <%= (typeof category !== 'undefined' && category === '安全态势') ? 'selected' : '' %>>安全态势</option>
+      <option value="漏洞分析" <%= (typeof category !== 'undefined' && category === '漏洞分析') ? 'selected' : '' %>>漏洞分析</option>
+      <option value="工具分享" <%= (typeof category !== 'undefined' && category === '工具分享') ? 'selected' : '' %>>工具分享</option>
+    </select>
+    <input type="text" name="q" placeholder="搜索文章…" value="<%= typeof searchQ !== 'undefined' ? searchQ : '' %>">
+    <button type="submit">筛选</button>
+  </form>
+
+  <!-- Inline SQL query debug output — deliberately exposes query structure -->
+  <% if (typeof sqlDebug !== 'undefined' && sqlDebug) { %>
+    <div style="background:#1a1a2e;padding:10px 14px;border-radius:6px;margin-bottom:16px;font-size:12px;color:#888;font-family:monospace;">
+      [SQL]: <%= sqlDebug %>
+    </div>
+  <% } %>
+
+  <% if (typeof articles !== 'undefined' && articles.length > 0) { %>
+    <% articles.forEach(function(a) { %>
+      <div class="blog-card">
+        <span class="category"><%= a.category %></span>
+        <h2><a href="/blog/<%= a.id %>"><%= a.title %></a></h2>
+        <div class="meta"><%= a.date %> · 作者: <%= a.author %></div>
+        <p class="excerpt"><%= a.excerpt %></p>
+      </div>
+    <% }) %>
+  <% } else { %>
+    <div style="text-align:center;padding:40px 0;color:#667899;">
+      <p style="font-size:18px;">没有找到相关文章</p>
+      <p style="font-size:14px;margin-top:8px;">请尝试其他关键词或分类</p>
+    </div>
+  <% } %>
+
+  <div class="pagination">
+    <span class="current">1</span>
+    <a href="/blog?page=2">2</a>
+    <a href="/blog?page=3">3</a>
+    <a href="/blog?page=4">4</a>
+  </div>
+</section>
+
+<%- include('_footer') %>

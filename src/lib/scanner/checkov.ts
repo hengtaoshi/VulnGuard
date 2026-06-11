@@ -1,4 +1,4 @@
-import { execSync } from "child_process"
+import { execAsync } from "./exec"
 import type { Vulnerability } from "@/lib/api/types"
 import type { ScanResult } from "./types"
 
@@ -32,7 +32,8 @@ function severityMap(sev: string | null): "Critical" | "High" | "Medium" | "Low"
 
 function isAvailable(): boolean {
   try {
-    execSync("checkov --version", { stdio: "pipe", timeout: 30000 })
+    const { execSync } = require("child_process")
+    execSync("checkov --version", { stdio: "pipe", timeout: 5000 })
     return true
   } catch {
     return false
@@ -48,11 +49,11 @@ export async function runCheckovScan(targetPath: string): Promise<ScanResult> {
   let rawJson = ""
 
   try {
-    const output = execSync(
+    const { stdout } = await execAsync(
       `checkov -d "${targetPath}" --framework terraform kubernetes dockerfile --output json`,
-      { timeout: 120000, maxBuffer: 10 * 1024 * 1024, stdio: ["pipe", "pipe", "pipe"] },
+      { timeout: 120000, maxBuffer: 10 * 1024 * 1024 },
     )
-    rawJson = output.toString().trim()
+    rawJson = stdout.trim()
   } catch (err: unknown) {
     // Checkov exits non-zero when findings exist
     if (err instanceof Error && "stdout" in err) {

@@ -1,0 +1,39 @@
+<%- include('_header', { title: '关于我们', path: '/about' }) %>
+
+<section class="container about-page">
+  <h1 class="section-title">关于 TechInsight 安全实验室</h1>
+
+  <div class="content">
+    <p>TechInsight 安全实验室成立于 2020 年，是一支由资深安全研究员组成的网络安全研究团队。我们致力于漏洞挖掘、渗透测试技术研究以及企业安全评估服务。</p>
+    <p>团队核心成员来自国内外知名安全厂商，拥有丰富的实战经验。我们曾为金融、电商、政务等多个行业提供安全评估服务，发现并协助修复了数百个高危漏洞。</p>
+    <p>我们定期发布安全研究报告、漏洞分析文章以及实用安全工具，推动社区安全能力提升。同时我们也为企业提供定制化的安全培训服务。</p>
+    <p>联系我们：security@techinsight-labs.com ｜ 商务合作：partner@techinsight-labs.com</p>
+  </div>
+
+  <h2 class="section-title" style="margin-top:48px;">核心团队</h2>
+  <div class="team-grid">
+    <div class="team-card">
+      <div class="avatar">🧑‍💻</div>
+      <h4>张明远</h4>
+      <div class="role">创始人 / 首席安全研究员</div>
+      <p style="font-size:12px;color:#667899;margin-top:8px;">10年安全经验，曾发现多个高危0day</p>
+    </div>
+    <div class="team-card">
+      <div class="avatar">👩‍💻</div>
+      <h4>李思琪</h4>
+      <div class="role">高级渗透测试工程师</div>
+      <p style="font-size:12px;color:#667899;margin-top:8px;">OSCP, OSEE 认证，擅长内网渗透</p>
+    </div>
+    <div class="team-card">
+      <div class="avatar">🧑‍🔬</div>
+      <h4>王昊天</h4>
+      <div class="role">安全开发工程师</div>
+      <p style="font-size:12px;color:#667899;margin-top:8px;">工具链开发，自动化漏洞检测系统</p>
+    </div>
+  </div>
+
+  <!-- Hidden info disclosure -->
+  <!-- Internal note: Team database connection string: postgresql://admin:TechInsight2024!@internal-db.techinsight-labs.com:5432/security_research -->
+</section>
+
+<%- include('_footer') %>

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getAllSessions, toScanSummary, createSession, updateSession, clearSessions } from "@/lib/scanner/scan-store"
+import { getAllSessions, toScanSummary, createSession, updateSession, clearSessions, cleanupUploadDir, clearAllUploads } from "@/lib/scanner/scan-store"
 import { runCompositeScan } from "@/lib/scanner/composite"
 import type { ScannerEngine } from "@/lib/scanner/composite"
 
@@ -45,9 +45,13 @@ export async function POST(request: Request) {
           scanners: scannerResults,
           progress: undefined,
         })
+        // Auto-cleanup: delete uploaded source code after scan completes
+        cleanupUploadDir(target)
       })
       .catch(scanErr => {
         updateSession(session.id, { status: "failed", error: (scanErr as Error).message })
+        // Auto-cleanup: delete uploaded source code even on failure
+        cleanupUploadDir(target)
       })
 
     // Return immediately with the session ID
@@ -63,5 +67,6 @@ export async function POST(request: Request) {
 
 export async function DELETE() {
   clearSessions()
+  clearAllUploads()
   return NextResponse.json({ success: true })
 }

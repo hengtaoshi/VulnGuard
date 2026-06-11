@@ -55,7 +55,6 @@ export default function Dashboard() {
   }, [scans])
 
   const typeLabels: Record<string, string> = {
-    url: t("dashboard.typeUrl"),
     source: t("dashboard.typeSource"),
   }
 

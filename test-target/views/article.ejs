@@ -1,0 +1,55 @@
+<%- include('_header', { title: article ? article.title : '文章详情', path: '/blog' }) %>
+
+<section class="container article-page">
+  <% if (article) { %>
+    <div class="article-header">
+      <span class="category"><%= article.category %></span>
+      <h1><%= article.title %></h1>
+      <div class="meta" style="color:#667899;font-size:14px;">
+        <%= article.date %> · 作者: <%= article.author %> · <%= article.views || 0 %> 次阅读
+      </div>
+    </div>
+
+    <div class="article-body">
+      <%- article.content %>
+    </div>
+
+    <!-- Comments Section — Stored XSS vector -->
+    <div class="comments" id="comments">
+      <h3>评论 (<%= comments ? comments.length : 0 %>)</h3>
+
+      <% if (typeof success !== 'undefined' && success) { %>
+        <div class="alert-box alert-success">评论提交成功！</div>
+      <% } %>
+
+      <% if (comments && comments.length > 0) { %>
+        <% comments.forEach(function(c) { %>
+          <div class="comment">
+            <div>
+              <span class="author"><%= c.author %></span>
+              <span class="time"><%= c.time %></span>
+            </div>
+            <!-- VULN: comments rendered raw — no sanitization -->
+            <div class="content"><%- c.content %></div>
+          </div>
+        <% }) %>
+      <% } else { %>
+        <p style="color:#667899;font-size:14px;">暂无评论，来写第一条吧</p>
+      <% } %>
+
+      <!-- Comment form -->
+      <form class="comment-form" action="/blog/<%= article.id %>/comment" method="POST">
+        <input type="text" name="author" placeholder="昵称" required>
+        <textarea name="content" placeholder="写下你的想法…" required></textarea>
+        <button type="submit">发表评论</button>
+      </form>
+    </div>
+  <% } else { %>
+    <div style="text-align:center;padding:60px 0;">
+      <p style="font-size:24px;color:#667899;">文章未找到</p>
+      <a href="/blog" style="display:inline-block;margin-top:16px;">← 返回博客</a>
+    </div>
+  <% } %>
+</section>
+
+<%- include('_footer') %>

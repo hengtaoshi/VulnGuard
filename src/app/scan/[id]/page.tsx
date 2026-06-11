@@ -19,33 +19,15 @@ const scannerIcons: Record<string, React.ReactNode> = {
   gitleaks: <Lock className="h-3 w-3" />,
   "npm-audit": <Package className="h-3 w-3" />,
   "pip-audit": <Package className="h-3 w-3" />,
+  "dependency-check": <Package className="h-3 w-3" />,
   trivy: <FileScan className="h-3 w-3" />,
-  wapiti: <Shield className="h-3 w-3" />,
-  sqlmap: <Database className="h-3 w-3" />,
+
   "ai-scanner": <Brain className="h-3 w-3" />,
   bandit: <Shield className="h-3 w-3" />,
   checkov: <Server className="h-3 w-3" />,
   nuclei: <Zap className="h-3 w-3" />,
-  subfinder: <Globe className="h-3 w-3" />,
-  assetfinder: <Globe className="h-3 w-3" />,
-  shuffledns: <Wifi className="h-3 w-3" />,
-  amass: <Layers className="h-3 w-3" />,
-  ffuf: <Search className="h-3 w-3" />,
-  gobuster: <Search className="h-3 w-3" />,
-  kiterunner: <GitBranch className="h-3 w-3" />,
-  httpx: <Globe className="h-3 w-3" />,
-  wafw00f: <Shield className="h-3 w-3" />,
-  gau: <Archive className="h-3 w-3" />,
-  waybackurls: <Archive className="h-3 w-3" />,
-  nmap: <Server className="h-3 w-3" />,
-  "http-headers": <Eye className="h-3 w-3" />,
-  "cors-detector": <Wifi className="h-3 w-3" />,
-  "form-analyzer": <FileScan className="h-3 w-3" />,
-  "error-analyzer": <AlertTriangle className="h-3 w-3" />,
-  "favicon-analyzer": <Flag className="h-3 w-3" />,
-  "third-party-deps": <Package className="h-3 w-3" />,
-  "tls-analyzer": <Lock className="h-3 w-3" />,
-  "gitdumper": <GitBranch className="h-3 w-3" />,
+
+
 }
 
 const defaultScannerIcon = <Shield className="h-3 w-3" />
@@ -339,31 +321,31 @@ function ReportHeader({ scan, duration }: { scan: ScanDetail; duration: string }
               </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 border border-border/40">
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 border border-border/40 sm:col-span-2 lg:col-span-2">
                 <Target className="h-4 w-4 text-muted-foreground shrink-0" />
                 <div className="min-w-0">
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Target</p>
-                  <p className="text-sm font-medium truncate">{scan.target}</p>
+                  <p className="text-xs text-foreground/70 uppercase tracking-wide">Target</p>
+                  <p className="text-xs font-medium break-all leading-relaxed">{scan.target}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 border border-border/40">
                 <Clock className="h-4 w-4 text-muted-foreground shrink-0" />
                 <div>
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Date</p>
+                  <p className="text-xs text-foreground/70 uppercase tracking-wide">Date</p>
                   <p className="text-sm font-medium">{formatDate(scan.createdAt || "")}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 border border-border/40">
                 <BarChart3 className="h-4 w-4 text-muted-foreground shrink-0" />
                 <div>
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Duration</p>
+                  <p className="text-xs text-foreground/70 uppercase tracking-wide">Duration</p>
                   <p className="text-sm font-medium">{duration}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 border border-border/40">
                 {scan.engine === "ai" ? <Brain className="h-4 w-4 text-violet-500 shrink-0" /> : <Cpu className="h-4 w-4 text-emerald-500 shrink-0" />}
                 <div>
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Engine</p>
+                  <p className="text-xs text-foreground/70 uppercase tracking-wide">Engine</p>
                   <p className="text-sm font-medium">{scan.engine === "ai" ? "AI 自主调度" : "全量扫描"}</p>
                 </div>
               </div>
@@ -446,18 +428,43 @@ function ExecutiveSummary({ scan, aggregation }: { scan: ScanDetail; aggregation
 
 // ─── Report Section: Scan Methodology (编排计划) ─────────────────────────────────
 
-function ScanMethodology({ plan, escalation }: {
+/** 从 AI reasoning 文本中解析出每个扫描器的匹配/不匹配判断 */
+function parseScannerDecisions(reasoning: string): { name: string; matched: boolean; rationale: string }[] {
+  const decisions: { name: string; matched: boolean; rationale: string }[] = []
+  // 匹配形如: "- scannerName：匹配|跳过|不匹配。原因..."
+  const scannerNames = ["semgrep", "gitleaks", "bandit", "npm-audit", "pip-audit",
+    "dependency-check", "trivy", "checkov", "nuclei", "ai-scanner"]
+  const lines = reasoning.split("\n")
+  for (const line of lines) {
+    const trimmed = line.replace(/^-\s*/, "").trim()
+    for (const name of scannerNames) {
+      // 匹配 "name：匹配..." 或 "name：跳过..." 或 "name：不匹配..."
+      const match = trimmed.match(new RegExp(`^${name}[：:]\\s*(匹配|跳过|不匹配)[。，]?\\s*([(（]?)(.*)`))
+      if (match) {
+        decisions.push({
+          name,
+          matched: match[1] === "匹配",
+          rationale: match[3].trim().replace(/[)）]$/, "").trim(),
+        })
+        break
+      }
+    }
+  }
+  return decisions
+}
+
+function ScanMethodology({ plan }: {
   plan: NonNullable<ScanDetail["orchestratorPlan"]>
-  escalation?: ScanDetail["dynamicEscalation"]
 }) {
   const priorityLabel: Record<string, string> = { speed: "⚡ 速度优先", depth: "🔍 深度优先", balanced: "⚖️ 均衡策略" }
   const phaseDescriptions = [
-    "Phase 1 — 快速被动检测组（并行）\n轻量级 HTTP 探测、安全头检查、CORS 检测、TLS 证书审查、Favicon 分析、错误页检测、表单安全分析、第三方库检测、WAF 识别、历史 URL 收集",
-    "Phase 2 — 信息收集组（并行）\n子域名被动枚举、DNS 资产发现、隐藏路径探测",
-    "Phase 3 — 主动探测组（并行）\n目录模糊测试、API 端点发现、DNS 解析验证、模板化漏洞扫描",
-    "Phase 4 — 深度扫描组（串行）\nDAST 综合爬虫扫描、SQL 注入自动化检测、深度 DNS 枚举、端口扫描",
-    "Phase 5 — AI 深度分析\nAI 辅助代码审计与逻辑漏洞分析",
+    "Phase 1 — 快速检测组（并行）\n密钥/凭证泄露检测、npm/pip 依赖项安全审计、Python 代码安全扫描",
+    "Phase 2 — 深度分析组（并行）\n多语言 SAST 静态代码分析、综合文件系统 CVE 扫描、IaC 安全配置审查、模板化漏洞扫描",
+    "Phase 3 — AI 深度分析\nAI 辅助代码审计与逻辑漏洞分析",
   ]
+
+  // 解析 AI 推理中的扫描器匹配判断
+  const scannerDecisions = parseScannerDecisions(plan.reasoning)
 
   return (
     <div className="space-y-4">
@@ -471,9 +478,9 @@ function ScanMethodology({ plan, escalation }: {
         </div>
       </div>
 
-      {/* AI Reasoning */}
+      {/* AI Reasoning — 结构化推理过程 */}
       <Card className="border-violet-500/20">
-        <CardContent className="p-4 space-y-3">
+        <CardContent className="p-4 space-y-4">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2">
               <Brain className="h-4 w-4 text-violet-500" />
@@ -492,17 +499,61 @@ function ScanMethodology({ plan, escalation }: {
                   + AI 代码审查
                 </Badge>
               )}
-              {escalation && (
-                <Badge variant="outline" className="border-amber-500/30 text-amber-500 text-[10px] gap-1">
-                  <Zap className="h-2.5 w-2.5" />
-                  动态升级：{escalation.scannersAdded.length} 个深度扫描器
-                </Badge>
-              )}
             </div>
           </div>
-          <div className="rounded-lg bg-muted/50 border border-border/40 p-3">
-            <p className="text-sm text-muted-foreground leading-relaxed">{plan.reasoning}</p>
-          </div>
+
+          {/* 扫描器匹配判断 —— 可视化的证据链表格 */}
+          {scannerDecisions.length > 0 && (
+            <div className="space-y-2">
+              <div className="text-xs font-semibold text-muted-foreground">扫描器匹配判断（证据链）</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {scannerDecisions.map(d => (
+                  <div key={d.name}
+                    className={`flex items-start gap-2.5 rounded-lg border p-2.5 transition-colors ${
+                      d.matched
+                        ? "border-emerald-500/20 bg-emerald-500/[0.03]"
+                        : "border-red-500/10 bg-red-500/[0.02] opacity-70"
+                    }`}
+                  >
+                    <div className={`mt-0.5 h-5 w-5 rounded-full flex items-center justify-center shrink-0 ${
+                      d.matched ? "bg-emerald-500/10" : "bg-red-500/10"
+                    }`}>
+                      {d.matched
+                        ? <span className="text-emerald-500 text-xs font-bold">✓</span>
+                        : <span className="text-red-400 text-xs font-bold">✗</span>
+                      }
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className={`text-xs font-semibold ${d.matched ? "text-emerald-600 dark:text-emerald-400" : "text-red-500 dark:text-red-400"}`}>
+                          {d.matched ? "匹配" : "不匹配"}
+                        </span>
+                        <span className="text-xs font-medium text-foreground/80">{d.name}</span>
+                      </div>
+                      {d.rationale && (
+                        <p className="text-[11px] text-muted-foreground/70 mt-0.5 leading-relaxed">
+                          {d.rationale}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 完整推理原文 —— 保留格式 */}
+          <details className="group">
+            <summary className="text-xs text-muted-foreground/60 cursor-pointer hover:text-foreground/80 transition-colors list-none flex items-center gap-1">
+              <ChevronDown className="h-3 w-3 group-open:rotate-180 transition-transform" />
+              查看完整推理过程
+            </summary>
+            <div className="mt-2 rounded-lg bg-muted/30 border border-border/40 p-3 overflow-x-auto">
+              <pre className="text-xs text-muted-foreground/80 leading-relaxed whitespace-pre-wrap font-mono">
+                {plan.reasoning}
+              </pre>
+            </div>
+          </details>
         </CardContent>
       </Card>
 
@@ -761,105 +812,6 @@ function AIAggregationReport({ aggregation, vulnerabilities }: { aggregation: Ag
           </CardContent>
         </Card>
       )}
-    </div>
-  )
-}
-
-// ─── Report Section: Crawl Results ─────────────────────────────────────────
-
-function CrawlResultsSection({ crawlData }: { crawlData: NonNullable<ScanDetail["crawlData"]> }) {
-  const [showAll, setShowAll] = useState(false)
-  const displayUrls = showAll ? crawlData.sitemap : crawlData.sitemap.slice(0, 15)
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <div className="h-8 w-8 rounded-lg bg-cyan-500/10 flex items-center justify-center">
-          <Globe className="h-4 w-4 text-cyan-500" />
-        </div>
-        <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-lg font-bold">网站爬取发现</h2>
-            <Badge variant="outline" className="border-cyan-500/30 text-cyan-500 text-[10px]">自动发现</Badge>
-          </div>
-          <p className="text-xs text-muted-foreground">Site Crawl Results — {crawlData.totalPages} pages discovered</p>
-        </div>
-      </div>
-
-      {/* Stats cards */}
-      <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
-        <Card className="border-cyan-500/30 bg-cyan-500/[0.03]">
-          <CardContent className="p-4 text-center">
-            <Globe className="h-5 w-5 mx-auto text-cyan-500 mb-1" />
-            <div className="text-2xl font-black text-cyan-500">{crawlData.totalPages}</div>
-            <div className="text-[10px] text-muted-foreground mt-0.5">发现页面数</div>
-          </CardContent>
-        </Card>
-        <Card className="border-blue-500/30 bg-blue-500/[0.03]">
-          <CardContent className="p-4 text-center">
-            <FileScan className="h-5 w-5 mx-auto text-blue-500 mb-1" />
-            <div className="text-2xl font-black text-blue-500">{crawlData.totalForms}</div>
-            <div className="text-[10px] text-muted-foreground mt-0.5">发现表单</div>
-          </CardContent>
-        </Card>
-        <Card className="border-red-500/30 bg-red-500/[0.03]">
-          <CardContent className="p-4 text-center">
-            <Lock className="h-5 w-5 mx-auto text-red-500 mb-1" />
-            <div className="text-2xl font-black text-red-500">{crawlData.totalPasswordFields}</div>
-            <div className="text-[10px] text-muted-foreground mt-0.5">登录页面</div>
-          </CardContent>
-        </Card>
-        <Card className="border-amber-500/30 bg-amber-500/[0.03]">
-          <CardContent className="p-4 text-center">
-            <Upload className="h-5 w-5 mx-auto text-amber-500 mb-1" />
-            <div className="text-2xl font-black text-amber-500">{crawlData.totalFileUploads}</div>
-            <div className="text-[10px] text-muted-foreground mt-0.5">文件上传页</div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Sitemap */}
-      <Card className="border-cyan-500/10">
-        <CardContent className="p-4">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-semibold">站点地图 (Sitemap)</span>
-            <span className="text-[10px] text-muted-foreground">
-              爬取深度: {Math.max(...crawlData.sitemap.map(p => p.depth), 0)} 层 ·
-              {crawlData.totalPages} 个页面
-            </span>
-          </div>
-          <div className="space-y-1 max-h-80 overflow-y-auto pr-1">
-            {displayUrls.map((page, i) => (
-              <div key={i} className="flex items-start gap-2 p-1.5 rounded hover:bg-accent/50 text-xs">
-                <span className="text-muted-foreground shrink-0 mt-0.5">
-                  {page.depth === 0 ? "🏠" : page.depth === 1 ? "📄" : "📁"}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <code className="text-xs text-foreground break-all">{page.url}</code>
-                  {page.title && (
-                    <span className="text-[10px] text-muted-foreground ml-2">— {page.title}</span>
-                  )}
-                </div>
-                <span className="text-[10px] text-muted-foreground shrink-0">
-                  d={page.depth}
-                </span>
-              </div>
-            ))}
-          </div>
-          {crawlData.sitemap.length > 15 && (
-            <button
-              onClick={() => setShowAll(!showAll)}
-              className="mt-2 text-xs text-cyan-500 hover:text-cyan-400 transition-colors"
-            >
-              {showAll ? "收起" : `查看全部 ${crawlData.sitemap.length} 个页面 ▾`}
-            </button>
-          )}
-        </CardContent>
-      </Card>
-
-      <p className="text-[10px] text-muted-foreground">
-        爬虫耗时: {formatTime(crawlData.durationMs)} · 最大爬取深度: 2 层 · 单页面应用(SPA)可能无法完全爬取
-      </p>
     </div>
   )
 }
@@ -1279,7 +1231,7 @@ function SecurityReport({ scan }: { scan: ScanDetail }) {
             { id: "summary", label: "摘要", icon: BarChart3 },
             { id: "methodology", label: "方案", icon: Brain },
             { id: "scanners", label: "执行", icon: Shield },
-            ...(scan.crawlData && scan.crawlData.totalPages > 0 ? [{ id: "crawl", label: "爬取", icon: Globe }] : []),
+
             { id: "aggregation", label: "聚合", icon: Brain },
             { id: "findings", label: "漏洞", icon: AlertTriangle },
             { id: "analysis", label: "分析", icon: Sparkles },
@@ -1318,7 +1270,7 @@ function SecurityReport({ scan }: { scan: ScanDetail }) {
       {/* Section 1: Scan Methodology (编排计划) */}
       <div id="methodology" className={sectionStyle}>
         {plan ? (
-          <ScanMethodology plan={plan} escalation={scan.dynamicEscalation} />
+          <ScanMethodology plan={plan} />
         ) : (
           <div className="space-y-4">
             <div className="flex items-center gap-3">
@@ -1344,15 +1296,7 @@ function SecurityReport({ scan }: { scan: ScanDetail }) {
       {/* Divider */}
       <div className="border-t border-border/50" />
 
-      {/* Section: Crawl Results */}
-      {scan.crawlData && scan.crawlData.totalPages > 0 && (
-        <>
-          <div id="crawl" className={sectionStyle}>
-            <CrawlResultsSection crawlData={scan.crawlData} />
-          </div>
-          <div className="border-t border-border/50" />
-        </>
-      )}
+
 
       {/* Section 2: Scanner Results */}
       <div id="scanners" className={sectionStyle}>

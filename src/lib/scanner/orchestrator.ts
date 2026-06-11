@@ -1,5 +1,6 @@
 import { SCANNER_MANIFEST } from "./manifest"
 import type { ScannerManifestEntry } from "./manifest"
+import type { TargetAnalysis } from "./target-analyzer"
 
 const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || "deepseek-v4-flash"
 const DEEPSEEK_API_URL = process.env.DEEPSEEK_BASE_URL
@@ -21,176 +22,103 @@ export interface OrchestratorInput {
   target: string
   availableScannerNames: string[]
   engine: "ai" | "all"
+  /** 新增：预扫描分析数据，为 AI 提供真实的技术栈证据 */
+  targetAnalysis: TargetAnalysis
 }
 
 // ─── System Prompt ───────────────────────────────────────────────────────────
 
 function buildSystemPrompt(manifest: ScannerManifestEntry[]): string {
-  return `你是一位专业的安全扫描编排专家，你的职责是分析扫描目标并制定最优的扫描计划。
+  return `# 角色定位
 
-重要：reasoning 字段必须使用中文描述。
+你是一位专业的安全扫描编排专家，你的职责是**基于目标源码的实际证据**来选择和调度安全扫描工具。
+
+你**不是**一个固定规则引擎——你是一个分析师。你先分析源码结构，再根据找到的证据匹配合适的工具。
+
+## 核心原则
+
+1. **证据驱动**：你对每个扫描器的选择都必须有明确的、可追溯的依据，依据来自下方的【目标分析报告】。
+2. **禁止盲选**：如果目标中不存在匹配某扫描器的技术特征文件（即 techIndicators），则不得选择该扫描器。例如目标中没有 .py 文件就不选 bandit，没有 package-lock.json 就不选 npm-audit。
+3. **宁缺毋滥**：不确定时默认选择保守覆盖（semgrep + gitleaks），再根据明确证据扩展。
+4. **全面但不浪费**：选中的每个扫描器都应该有其独特价值，不做重复覆盖。
 
 ## 可用扫描引擎清单
 
-以下是所有可用的扫描引擎及其能力、检测类型和耗时。
+以下是所有可用的源码扫描引擎及其能力、检测类型和耗时。
 
+\`\`\`json
 ${JSON.stringify(manifest, null, 2)}
+\`\`\`
 
-## 决策框架
+## 决策流程
 
-### Step 1: 目标分析
-分析目标 URL/路径的特征，判断以下维度：
-- **协议类型**: HTTP vs HTTPS（HTTPS 需要 TLS 证书检查）
-- **目标类型**: API 端点（含 /api/、/graphql、/v1/ 等） vs Web 页面 vs 静态站点
-- **技术推断**: 从 URL 路径推断可能的底层技术（如 .php、.aspx、/wp-content/ 等）
-- **域名特征**: 主域名 vs 子域名（子域名可能指向不同服务）
-- **是否可能有API**: 包含 /api、/rest、/graphql 等路径
+你必须按以下 4 步严格推理，在 reasoning 字段中清晰展示每一步的思考结论。
 
-### Step 2: 扫描类别选择
-根据目标分析结果，从以下类别中选择合适的扫描类别：
+### Step 1: 审查目标分析报告
+仔细阅读下方【目标分析报告】中的实际数据，确认以下信息：
+- 项目有哪些语言的文件？各多少数量？
+- 检测到哪些配置文件（package.json、requirements.txt、Dockerfile 等）？
+- 项目规模如何？
+- 有哪些目录结构特征？
 
-**a) DNS 信息收集**（仅域名目标时使用）
-- subfinder: 快速被动子域名枚举，从30+数据源聚合
-- assetfinder: 轻量子域名发现
-- shuffledns: DNS 解析验证（配合 subfinder 使用）
-- amass: 深度 DNS 枚举（耗时较长，仅对复杂目标使用）
+### Step 2: 逐项评估扫描器匹配度
+对照可用扫描器清单，针对每个扫描器，判断目标是否具备其所需的 techIndicators。对于每台扫描器，你必须做"匹配/不匹配 + 原因"的判断，并将结论写入 reasoning。
 
-**b) 端口扫描**（需要知道开放服务时使用）
-- nmap: 端口扫描+服务版本检测（耗时较长）
-  *注意：仅在需要深度探测时使用，快速检查不需要*
+| 扫描器  | 必要条件（任意一项满足即可匹配） | 匹配判断 |
+|---------|--------------------------------|---------|
+| semgrep | 存在任意源码文件（.js/.ts/.py/.java/.go 等） | 几乎总是匹配，除非目标为空目录 |
+| bandit  | 存在 .py 文件 或 requirements.txt / Pipfile | 无 Python 代码则不选 |
+| gitleaks| 任意源码项目（几乎总是匹配） | 几乎总是匹配 |
+| npm-audit | 存在 package-lock.json 或 yarn.lock | 无 lock 文件则不选 |
+| pip-audit | 存在 requirements.txt 或 Pipfile | 无 Python 依赖文件则不选 |
+| dependency-check | 存在 pom.xml / build.gradle / go.mod / Cargo.toml 等 | 无对应构建文件则不选 |
+| trivy    | 存在 OS 级或语言级依赖特征 | 综合性扫描，中小项目可选，大项目推荐 |
+| checkov  | 存在 .tf / Dockerfile / k8s yaml 等 IaC 文件 | 无 IaC 文件则不选 |
+| nuclei   | 中大型项目推荐（> 100 文件），小型项目可选 | 小项目通常可跳过 |
+| ai-scanner | 存在源码文件 | 几乎总是匹配 |
 
-**c) Web 指纹识别与探测**（所有 Web 目标均适用）
-- httpx: HTTP 探针，检测存活、技术栈、响应头、favicon
-- whatweb: 1800+ 插件的技术栈深度识别
+### Step 3: 选择优先级和扫描模式
+根据引擎模式和项目特征决定：
 
-**d) WAF 检测**（所有 Web 目标均适用）
-- wafw00f: 识别 150+ 种 WAF 产品
+**"ai" 引擎模式** — 智能自适应
+- 默认 balanced 优先级，除非有明确理由选用 speed（极速需求）或 depth（高安全需求）
+- aiReview 默认 true，speed 模式可设为 false
+- ai-scanner 通常应该包含，除非目标极小（< 10 文件）或 speed 模式
 
-**e) 目录与文件扫描**（需要发现隐藏路径时使用）
-- ffuf: 高性能目录/参数模糊测试（首选）
-- gobuster: 目录枚举+虚拟主机发现
-- kiterunner: API 端点发现（目标含 API 时强烈推荐）
+**"all" 引擎模式** — 最大覆盖
+- 强制 depth 优先级 + aiReview = true
+- 选择所有可用的扫描器
 
-**f) 敏感信息泄露检测**（所有 Web 目标均适用）
-- gitdumper: 检测 .git 目录暴露
-- gau: 从历史存档中收集 URL
-- waybackurls: 从 Wayback Machine 收集历史 URL
-
-**g) Web 漏洞被动分析**（所有 Web 目标均适用）
-- http-headers: 安全头检测（HSTS/CSP/XFO/CTO等）
-- cors-detector: CORS 配置缺陷检测
-- form-analyzer: 表单提交安全性分析
-- error-analyzer: 错误页信息泄露检测
-- favicon-analyzer: Favicon 哈希分析
-- third-party-deps: 第三方库漏洞检测
-
-**h) TLS/SSL 证书审查**（仅 HTTPS 目标）
-- tls-analyzer: 证书有效期、协议版本、弱加密套件检测
-
-**i) Web 漏洞深度扫描**（需要主动测试时使用）
-- nuclei: 模板化漏洞扫描（8000+ 模板）
-- wapiti: DAST 综合扫描（SQL/XSS/命令注入等）
-- sqlmap: SQL 注入自动化检测（检测到注入点时使用）
-
-**j) AI 深度分析**（全场景）
-- ai-scanner: AI 辅助代码/逻辑漏洞分析
-
-### Step 3: 引擎模式规则
-
-**"ai" 引擎模式** — 智能自适应（根据目标动态选择覆盖深度）：
-- 根据目标分析结果动态决定覆盖范围，兼顾效率与全面性
-- DNS 类：仅选择 subfinder（快速被动），跳过 amass（太慢）
-- Web 指纹：httpx 必须选（快速），whatweb 可选
-- 被动分析：所有 Node.js 原生检测全部选择（零耗时快）
-- TLS：仅 HTTPS 目标时选择
-- 目录扫描：首选 ffuf（最快），skip kiterunner 除非发现 API
-- 深度扫描激活规则（以下任一条件满足时，wapiti/sqlmap/nuclei 必须选择）：
-  * 目标包含表单（form 标签、登录页、注册页）
-  * URL 路径包含 /api/、/graphql、/rest、/v1/、/v2/ 等 API 特征
-  * 目标包含文件上传功能（upload、file）
-  * 目标 URL 看起来是动态 Web 应用（非静态 HTML）
-  * 目标包含搜索功能、用户输入参数（?id=、?q=、?page= 等）
-  * 经 httpx 检测有技术栈指纹（表明是动态框架而非静态站点）
-- 当上述条件**都不满足**（明确为静态站点）时：可跳过深度扫描
-
-**"all" 引擎模式** — 最大覆盖：
-- 选择所有可用的相关扫描器
-- DNS：subfinder + assetfinder + shuffledns，复杂目标加 amass
-- 端口：如果 nmap 可用则选择
-- 目录：ffuf + gobuster + kiterunner
-- Web 指纹：httpx + whatweb
-- OSINT：gau + waybackurls
-- 被动分析：全部选择
-- TLS：HTTPS 必选
-- 深度扫描：nuclei + wapiti + sqlmap（如相关）
-- 始终设置 aiReview = true
-
-### Step 4: 并行分组策略
-
-**URL 模式下的分组规则：**
-- **Phase 1 — 快速被动检测组（并行执行）**：
-  httpx、http-headers、cors-detector、tls-analyzer（HTTPS）、
-  favicon-analyzer、error-analyzer、form-analyzer、third-party-deps、
-  wafw00f、gau、waybackurls
-  *原因：所有都是轻量级请求，互不依赖*
-  *最大并发：不限*
-
-- **Phase 2 — 信息收集组（并行执行）**：
-  subfinder、assetfinder、whatweb、gitdumper
-  *原因：DNS 和轻量 Web 探测可同时进行*
-  *最大并发：4*
-
-- **Phase 3 — 主动探测组（并行执行）**：
-  ffuf、gobuster、kiterunner、shuffledns（需 subfinder 完成后）、nuclei
-  *原因：这些工具会发起大量请求，但互不干扰*
-  *注意：shuffledns 建议在 subfinder 之后执行*
-
-- **Phase 4 — 深度扫描组（串行）**：
-  wapiti、sqlmap、nmap、amass
-  *原因：这些工具耗时久、资源消耗大，逐一执行*
-  *注意：sqlmap 仅在检测到注入点时由 AI 决定是否启用*
-
-- **Phase 5 — AI 汇聚分析（最后执行）**：
-  ai-scanner + AI 聚合
-
-### Step 5: 扫描优先级调整
-
-- **speed（速度优先）** — 仅当目标为以下情况时选择：
-  * 静态站点（纯 HTML/CSS/JS，无表单、无API、无动态参数）
-  * 已知的 CDN、文档站点、博客
-  * 快速健康检查场景
-  * 仅选择 Phase 1 + Phase 2，跳过 Phase 3/4
-
-- **balanced（均衡）** — 标准 Web 应用：
-  * 含表单或基本交互功能的网站
-  * 需检查常见 Web 漏洞但无需深度 SQL 注入
-  * 选择 Phase 1 + Phase 2 + Phase 3（含 nuclei），跳过 Phase 4
-
-- **depth（深度优先）** — 高价值/高风险目标：
-  * 含 API 端点（/api/、/graphql、/rest）
-  * 含登录/注册/文件上传功能
-  * 含用户输入参数（?id=、?q=、?file= 等）
-  * 电商、金融、后台管理系统
-  * 经 httpx 检测出具体技术栈框架
-  * **选择所有 Phase，包含 wapiti/sqlmap/nuclei**
-
-- **重要规则**：当目标为 URL 模式时，如果无法确定目标类型，**默认使用 balanced 或 depth** 而非 speed，以确保注入漏洞不被遗漏
-- "all" 引擎强制使用 depth 优先级
+### Step 4: 并行分组
+按扫描器的 typicalDuration 和依赖关系分组：
+- Phase 1（并行启动）：typicalDuration 为 fast + medium 的扫描器
+- Phase 2（并行启动）：typicalDuration 为 medium + slow 的扫描器（ai-scanner 应最后）
+- 两组顺序执行，组内并行
 
 ## 输出格式
-只返回 JSON，不要 markdown 代码块，不要额外说明。reasoning 字段必须用中文描述。
 
+只返回 JSON，不要 markdown 代码块，不要额外说明。
+
+\`\`\`json
 {
-  "reasoning": "简要说明选择了哪些工具以及为何选择（中文，2-3句话）",
-  "selectedScanners": ["name1", "name2", ...],
+  "reasoning": "【必填】详细的中文推理过程。必须包含：\n1. 目标分析摘要（项目类型、语言分布、配置文件）\n2. 每个扫描器的匹配判断（匹配/不匹配 + 原因）\n3. 优先级选择的理由\n4. 分组策略说明",
+  "selectedScanners": ["从可用扫描器中选出的名称数组"],
   "parallelGroups": [
-    ["name1", "name2", "name3"],
-    ["name4", "name5"],
-    ...
+    ["phase1-扫描器", "..."],
+    ["phase2-扫描器", "..."]
   ],
   "aiReview": true 或 false,
-  "scanPriority": "speed" | "depth" | "balanced"
-}`
+  "scanPriority": "speed" | "balanced" | "depth"
+}
+\`\`\`
+
+## 输出约束
+
+- reasoning 字段**必须使用中文**
+- 每个被选中的扫描器，reasoning 中必须包含一句明确的**证据引用**，格式如："选择 Bandit：目标检测到 12 个 .py 文件"
+- 每个被跳过的扫描器，reasoning 中必须说明**跳过原因**，格式如："跳过 npm-audit：未检测到 package-lock.json 或 yarn.lock"
+- 严禁选择与目标技术特征不匹配的扫描器
+- 严禁在没有证据的情况下"默认"选择扫描器`
 }
 
 // ─── DeepSeek Call ──────────────────────────────────────────────────────────
@@ -218,14 +146,13 @@ async function callDeepSeek(systemPrompt: string, userPrompt: string): Promise<s
           { role: "user", content: userPrompt },
         ],
         temperature: 0.1,
-        max_tokens: 2048,
+        max_tokens: 4096,
       }),
       signal: controller.signal,
     })
 
     const json = await res.json()
 
-    // Check for API-level errors in response body (e.g., invalid model, auth failure)
     if (json.error) {
       throw new Error(`DeepSeek API error: ${json.error.message || JSON.stringify(json.error)}`)
     }
@@ -239,8 +166,6 @@ async function callDeepSeek(systemPrompt: string, userPrompt: string): Promise<s
       throw new Error("DeepSeek returned empty response (no choices)")
     }
 
-    // Reasoning models (deepseek-v4-flash, deepseek-reasoner) put the response
-    // in `reasoning_content` while non-reasoning models use `content`.
     return msg.content || msg.reasoning_content || ""
   } finally {
     clearTimeout(timeout)
@@ -311,10 +236,45 @@ function parseScanPlan(content: string, availableNames: string[]): ScanPlan {
 // ─── Build User Prompt ───────────────────────────────────────────────────────
 
 function buildUserPrompt(input: OrchestratorInput): string {
-  return `Target: ${input.target}
-Mode: ${input.mode}
-Engine: ${input.engine}
-Available scanners: ${input.availableScannerNames.join(", ")}`
+  const analysis = input.targetAnalysis
+
+  // 格式化语言分布为易读文本
+  const langSummary = Object.entries(analysis.languages)
+    .sort(([, a], [, b]) => b.count - a.count)
+    .map(([lang, stats]) => `  - ${lang}: ${stats.count} 个文件 (${stats.percentage}%)`)
+    .join("\n")
+
+  // 格式化配置文件
+  const configSummary = analysis.configDetails
+    .map(c => `  - ${c.name}: ${c.found.join(", ")}（${c.description}）`)
+    .join("\n")
+
+  // 目录结构样本（控制在合理数量内）
+  const treeSample = analysis.fileTreeSample.slice(0, 30).join("\n")
+
+  return `## 扫描任务
+
+引擎模式: ${input.engine}
+可用扫描器: ${input.availableScannerNames.join(", ")}
+
+## 目标分析报告
+
+目标路径: ${analysis.targetPath}
+项目规模: ${analysis.sizeCategory}（共 ${analysis.totalFiles} 个文件）
+项目类型: ${analysis.projectTypes.join("、")}
+
+### 语言分布
+${langSummary || "  （未检测到常见编程语言文件）"}
+
+### 检测到的配置文件
+${configSummary || "  （未检测到标准配置文件）"}
+${analysis.hasIaC ? "\n⚠ 检测到 IaC（基础设施即代码）文件，建议包含 IaC 扫描器" : ""}
+${analysis.hasPython ? "\n⚠ 检测到 Python 代码文件，建议包含 bandit" : ""}
+
+### 目录结构样本（前 30 个文件）
+\`\`\`
+${treeSample || "  （空目录）"}
+\`\`\``
 }
 
 // ─── Main Orchestrator Function ──────────────────────────────────────────────
@@ -327,45 +287,10 @@ export async function createOrchestratorPlan(input: OrchestratorInput): Promise<
 
   const content = await callDeepSeek(systemPrompt, userPrompt)
 
-  // CRITICAL: Only pass scanners that support this mode to parseScanPlan.
-  // Even though DeepSeek's prompt is mode-filtered, the response isn't validated
-  // against mode — without this filter, DeepSeek could return source-mode scanners
-  // (like Gitleaks, Semgrep, etc.) for a URL target and they'd pass validation.
+  // Only pass scanners that support this mode to parseScanPlan
   const modeNames = new Set(modeManifest.map(m => m.name))
   const availableModeNames = input.availableScannerNames.filter(n => modeNames.has(n))
   const plan = parseScanPlan(content, availableModeNames)
-
-  // ── Local Target Safety Override ─────────────────────────────────────
-  // DeepSeek tends to classify localhost/private-IP targets as "static sites"
-  // or underestimate their attack surface, skipping crawler, ai-scanner, etc.
-  // Since we can't know if a local target is truly static, force essential
-  // scanners for any private/loopback address to ensure adequate coverage.
-  if (input.mode === "url") {
-    const isPrivateTarget = /^(https?:\/\/)?(localhost|127\.0\.0\.1|0\.0\.0\.0|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/.test(input.target)
-    if (isPrivateTarget) {
-      // Force balanced priority when AI picks speed for local targets
-      if (plan.scanPriority === "speed") {
-        plan.scanPriority = "balanced"
-      }
-      plan.aiReview = true
-
-      // Essential scanners that the AI tends to skip for localhost targets
-      const essentialScanners = ["crawler", "ai-scanner"]
-      for (const name of essentialScanners) {
-        if (availableModeNames.includes(name) && !plan.selectedScanners.includes(name)) {
-          plan.selectedScanners.push(name)
-        }
-      }
-
-      // Add a new parallel group for the additional scanners
-      const additions = essentialScanners.filter(
-        name => availableModeNames.includes(name) && !plan.parallelGroups.flat().includes(name)
-      )
-      if (additions.length > 0) {
-        plan.parallelGroups.push(additions)
-      }
-    }
-  }
 
   return plan
 }
