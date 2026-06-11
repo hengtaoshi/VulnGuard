@@ -1,4 +1,4 @@
-import { execSync } from "child_process"
+import { execAsync } from "./exec"
 import { join } from "path"
 import { existsSync, mkdirSync } from "fs"
 import type { Vulnerability } from "@/lib/api/types"
@@ -36,6 +36,7 @@ function severityMap(sev: string): "Critical" | "High" | "Medium" | "Low" {
 
 function isAvailable(): boolean {
   try {
+    const { execSync } = require("child_process")
     execSync(`"${TRIVY_PATH}" --version`, { stdio: "pipe", timeout: 5000 })
     return true
   } catch {
@@ -43,43 +44,15 @@ function isAvailable(): boolean {
   }
 }
 
-export async function runTrivyScan(targetPath: string): Promise<ScanResult> {
-  const scannerName = "trivy"
-  if (!isAvailable()) {
-    return { vulnerabilities: [], totalChecks: 0, errors: ["Trivy not found"], scannerName }
-  }
+function parseTrivyOutput(stdout: string, scannerName: string): ScanResult | null {
+  const trimmed = stdout.trim()
+  if (!trimmed) return null
+
+  const jsonStart = trimmed.indexOf("{")
+  if (jsonStart < 0) return null
 
   try {
-    // Ensure trivy cache directory exists
-    const trivyCacheDir = join(process.cwd(), ".trivy-cache")
-    if (!existsSync(trivyCacheDir)) {
-      try { mkdirSync(trivyCacheDir, { recursive: true }) } catch { /* ignore */ }
-    }
-    const output = execSync(
-      `"${TRIVY_PATH}" fs --format=json --quiet --scanners vuln,misconfig,secret --cache-dir "${trivyCacheDir}" "${targetPath}"`,
-      {
-        timeout: 300000,
-        maxBuffer: 50 * 1024 * 1024,
-        stdio: ["pipe", "pipe", "pipe"],
-        env: {
-          ...process.env,
-          TRIVY_DB_REPOSITORY: "ghcr.io/aquasecurity/trivy-db",
-        },
-      },
-    )
-
-    const stdout = output.toString().trim()
-    if (!stdout) {
-      return { vulnerabilities: [], totalChecks: 0, errors: [], scannerName }
-    }
-
-    const jsonStart = stdout.indexOf("{")
-    if (jsonStart < 0) {
-      return { vulnerabilities: [], totalChecks: 0, errors: [], scannerName }
-    }
-
-    const parsed: TrivyResult = JSON.parse(stdout.slice(jsonStart))
-
+    const parsed: TrivyResult = JSON.parse(trimmed.slice(jsonStart))
     const vulnerabilities: Vulnerability[] = []
     let idx = 0
 
@@ -110,7 +83,55 @@ export async function runTrivyScan(targetPath: string): Promise<ScanResult> {
       errors: [],
       scannerName,
     }
+  } catch {
+    return null
+  }
+}
+
+export async function runTrivyScan(targetPath: string): Promise<ScanResult> {
+  const scannerName = "trivy"
+  if (!isAvailable()) {
+    return { vulnerabilities: [], totalChecks: 0, errors: ["Trivy not found"], scannerName }
+  }
+
+  try {
+    const trivyCacheDir = join(process.cwd(), ".trivy-cache")
+    if (!existsSync(trivyCacheDir)) {
+      try { mkdirSync(trivyCacheDir, { recursive: true }) } catch { /* ignore */ }
+    }
+
+    // Check if vulnerability DB is already cached — if not, skip vuln scanning
+    // to avoid failed DB download (gcr.io not always accessible in China).
+    const dbDir = join(trivyCacheDir, "db")
+    const hasDb = existsSync(dbDir)
+    const scanners = hasDb ? "vuln,misconfig,secret" : "misconfig,secret"
+
+    const { stdout: output } = await execAsync(
+      `"${TRIVY_PATH}" fs --format=json --quiet --scanners ${scanners} --cache-dir "${trivyCacheDir}" "${targetPath}"`,
+      {
+        timeout: 300000,
+        maxBuffer: 50 * 1024 * 1024,
+        env: {
+          ...process.env,
+          HTTP_PROXY: process.env.HTTP_PROXY || "http://127.0.0.1:7897",
+          HTTPS_PROXY: process.env.HTTPS_PROXY || "http://127.0.0.1:7897",
+          TRIVY_DB_REPOSITORY: "ghcr.io/aquasecurity/trivy-db",
+        },
+      },
+    )
+
+    const result = parseTrivyOutput(output, scannerName)
+    if (result) return result
+    return { vulnerabilities: [], totalChecks: 0, errors: [], scannerName }
   } catch (err: unknown) {
+    // Trivy may return non-zero for various reasons — check stdout on the error
+    if (err instanceof Error && "stdout" in err) {
+      const stdout = (err as { stdout: string }).stdout?.toString().trim()
+      if (stdout) {
+        const result = parseTrivyOutput(stdout, scannerName)
+        if (result) return result
+      }
+    }
     return {
       vulnerabilities: [],
       totalChecks: 0,

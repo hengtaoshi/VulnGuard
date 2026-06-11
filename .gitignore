@@ -14,3 +14,10 @@ tools/bin/*.exe
 tools/wordlists/
 __pycache__/
 *.pyc
+.dc-report/
+data/uploads/
+scan-payload.json
+scan-test.json
+.reasonix/
+.superpowers/
+test-report.html

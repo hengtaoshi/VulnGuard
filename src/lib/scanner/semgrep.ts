@@ -1,147 +1,124 @@
-import { execSync, exec } from "child_process"
-import { promisify } from "util"
+import { execAsync } from "./exec"
 import { join } from "path"
+import { existsSync } from "fs"
 import type { Vulnerability } from "@/lib/api/types"
 
-const SEMGREP_PATH = "C:\\Users\\SHT\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\semgrep.exe"
 const LOCAL_RULES = join(process.cwd(), "tools", "semgrep-rules", "security.yaml")
-const execAsync = promisify(exec)
+
+// Resolve semgrep binary: try env var, then PATH, then default
+function resolveSemgrepBin(): string {
+  const cached = (globalThis as any).__semgrep_path_cache
+  if (cached) return cached
+  try {
+    const { execSync } = require("child_process") as typeof import("child_process")
+    const output = execSync("where semgrep 2>nul", { encoding: "utf-8", timeout: 5000 })
+    const path = output.trim().split("\n")[0]
+    if (path) {
+      (globalThis as any).__semgrep_path_cache = path
+      return path
+    }
+  } catch { /* fallthrough */ }
+  return "semgrep"
+}
+
+type SemgrepSev = "ERROR" | "WARNING" | "INFO"
+type VulnSev = "Critical" | "High" | "Medium"
 
 interface SemgrepResult {
   check_id: string
   path: string
-  start: { line: number; col: number; offset: number }
-  end: { line: number; col: number; offset: number }
+  start: { line: number }
   extra: {
     message: string
-    metadata: {
-      cwe?: string[]
-      cve?: string[]
-      references?: string[]
-      category?: string
-    }
-    severity: "ERROR" | "WARNING" | "INFO"
+    metadata: { cwe?: string[]; references?: string[] }
+    severity: SemgrepSev
     lines?: string
-    fix?: string
   }
+}
+
+function severityMap(s: SemgrepSev): VulnSev {
+  return s === "ERROR" ? "Critical" : s === "WARNING" ? "High" : "Medium"
 }
 
 interface SemgrepOutput {
   results: SemgrepResult[]
-  errors: { message: string }[]
   paths: { scanned: string[] }
 }
 
-function severityMap(semgrepSeverity: string): "Critical" | "High" | "Medium" | "Low" {
-  switch (semgrepSeverity) {
-    case "ERROR": return "Critical"
-    case "WARNING": return "High"
-    case "INFO": return "Medium"
-    default: return "Low"
+export async function runSemgrepScan(targetPath: string): Promise<import("./types").ScanResult> {
+  const scannerName = "semgrep"
+  const bin = resolveSemgrepBin()
+
+  if (!existsSync(LOCAL_RULES)) {
+    return { vulnerabilities: [], totalChecks: 0, errors: ["Semgrep rules not found at " + LOCAL_RULES], scannerName }
   }
-}
 
-function extractCWE(refs: string[] | undefined): string {
-  if (!refs || refs.length === 0) return "—"
-  for (const r of refs) {
-    const m = r.match(/CWE-\d+/)
-    if (m) return m[0]
-  }
-  return "—"
-}
-
-function generateRecommendation(severity: string, message: string, metadata: SemgrepResult["extra"]["metadata"]): string {
-  const refs = metadata.references
-  if (refs && refs.length > 0) {
-    return `参考安全最佳实践: ${refs[0]}. ${message.split(".")[0]}.`
-  }
-  const sev = severityMap(severity)
-  if (sev === "Critical" || sev === "High") {
-    return `立即修复: ${message.split(".")[0]}. 建议实施输入验证、输出编码、最小权限原则等安全措施。`
-  }
-  return `建议修复: ${message.split(".")[0]}. 遵循安全编码规范进行整改。`
-}
-
-async function runSemgrep(targetPath: string, retries = 1): Promise<{ vulnerabilities: Vulnerability[], totalChecks: number }> {
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      const { stdout: stdoutBuf } = await execAsync(
-        `"${SEMGREP_PATH}" --config="${LOCAL_RULES}" --json --no-git-ignore --timeout=30 "${targetPath}"`,
-        {
-          timeout: 120000,
-          maxBuffer: 10 * 1024 * 1024,
-          env: { ...process.env, PYTHONUTF8: "1" },
-        },
-      )
-
-      const stdout = stdoutBuf.trim()
-      const jsonStart = stdout.indexOf("{")
-      const jsonEnd = stdout.lastIndexOf("}")
-      const jsonStr = jsonStart >= 0 && jsonEnd >= 0 ? stdout.slice(jsonStart, jsonEnd + 1) : stdout
-      const parsed: SemgrepOutput = JSON.parse(jsonStr)
-
-      if (parsed.errors && parsed.errors.length > 0) {
-        for (const err of parsed.errors) {
-          console.error("Semgrep error:", err.message)
-        }
-      }
-
-      const vulnerabilities: Vulnerability[] = parsed.results.map((r, idx) => {
-        const sev = severityMap(r.extra.severity)
-        const cweId = extractCWE(r.extra.metadata?.cwe)
-        return {
-          id: `VULN-${idx + 1}`,
-          name: r.check_id.split(".").pop()?.replace(/-/g, " ") || "Unknown",
-          severity: sev,
-          location: `${r.path}:${r.start.line}:${r.start.col}`,
-          cve: cweId,
-          description: r.extra.message,
-          recommendation: generateRecommendation(r.extra.severity, r.extra.message, r.extra.metadata),
-          code: r.extra.lines && r.extra.lines !== "requires login" ? r.extra.lines : undefined,
-          source: "semgrep",
-        }
-      })
-
-      const totalChecks = parsed.paths.scanned.length > 0
-        ? parsed.results.length + Math.max(0, 50 - parsed.results.length)
-        : 0
-
-      return { vulnerabilities, totalChecks }
-    } catch (err) {
-      if (attempt < retries) {
-        console.error(`Semgrep attempt ${attempt + 1} failed, retrying...`)
-        continue
-      }
-      const stderr = (err as { stderr?: string }).stderr || ""
-      if (stderr.includes("semgrep: command not found") || stderr.includes("not recognized")) {
-        throw new Error("Semgrep is not installed. Run: pip install semgrep")
-      }
-      if (stderr) console.error("Semgrep stderr:", stderr)
-      throw new Error(`Semgrep scan failed: ${err instanceof Error ? err.message : String(err)}`)
-    }
-  }
-  return { vulnerabilities: [], totalChecks: 0 }
-}
-
-export async function runSemgrepScan(targetPath: string): Promise<{
-  vulnerabilities: Vulnerability[]
-  totalChecks: number
-}> {
-  return runSemgrep(targetPath)
-}
-
-export async function runSemgrepOnCode(codeContent: string, language: string): Promise<{
-  vulnerabilities: Vulnerability[]
-  totalChecks: number
-}> {
-  const tmpDir = join(require("os").tmpdir(), `vulnguard-scan-${Date.now()}`)
   try {
-    require("fs").mkdirSync(tmpDir, { recursive: true })
-    const ext = language === "javascript" ? "js" : language === "typescript" ? "ts" : language === "python" ? "py" : "txt"
-    const filePath = join(tmpDir, `code.${ext}`)
-    require("fs").writeFileSync(filePath, codeContent, "utf-8")
-    return await runSemgrepScan(tmpDir)
-  } finally {
-    try { require("fs").rmSync(tmpDir, { recursive: true, force: true }) } catch { /* ignore cleanup errors */ }
+    const { stdout: stdoutBuf } = await execAsync(
+      `"${bin}" --config="${LOCAL_RULES}" --json --timeout=30 "${targetPath}"`,
+      { timeout: 120000, maxBuffer: 10 * 1024 * 1024 },
+    )
+
+    const stdout = stdoutBuf.trim()
+    const jsonStart = stdout.indexOf("{")
+    const jsonEnd = stdout.lastIndexOf("}")
+    const jsonStr = jsonStart >= 0 && jsonEnd >= 0 ? stdout.slice(jsonStart, jsonEnd + 1) : stdout
+
+    const parsed: SemgrepOutput = JSON.parse(jsonStr)
+    const vulnerabilities: Vulnerability[] = parsed.results.map((r, i) => ({
+      id: `SG-${i + 1}`,
+      name: r.extra.message.split(".")[0] || "Semgrep finding",
+      severity: severityMap(r.extra.severity),
+      location: `${r.path}:${r.start.line}`,
+      cve: r.extra.metadata.cwe?.[0] || "CWE-Info",
+      description: r.extra.message,
+      recommendation: r.extra.metadata.references?.[0]
+        ? `参考: ${r.extra.metadata.references[0]}`
+        : "Review and fix the identified issue",
+      code: r.extra.lines || undefined,
+      source: scannerName,
+    }))
+
+    return {
+      vulnerabilities,
+      totalChecks: parsed.paths?.scanned?.length || vulnerabilities.length + 10,
+      errors: [],
+      scannerName,
+    }
+  } catch (err: unknown) {
+    // Semgrep may exit non-zero — try to parse stdout from error
+    if (err instanceof Error && "stdout" in err) {
+      const stdout = (err as { stdout: string }).stdout?.toString().trim()
+      if (stdout) {
+        try {
+          const jsonStart = stdout.indexOf("{")
+          const jsonEnd = stdout.lastIndexOf("}")
+          const jsonStr = jsonStart >= 0 && jsonEnd >= 0 ? stdout.slice(jsonStart, jsonEnd + 1) : stdout
+          const parsed: SemgrepOutput = JSON.parse(jsonStr)
+          if (parsed.results?.length) {
+            const vulnerabilities = parsed.results.map((r, i) => ({
+              id: `SG-${i + 1}`,
+              name: r.extra.message.split(".")[0] || "Semgrep finding",
+              severity: severityMap(r.extra.severity),
+              location: `${r.path}:${r.start.line}`,
+              cve: r.extra.metadata.cwe?.[0] || "CWE-Info",
+              description: r.extra.message,
+              recommendation: r.extra.metadata.references?.[0]
+                ? `参考: ${r.extra.metadata.references[0]}`
+                : "Review and fix the identified issue",
+              code: r.extra.lines || undefined,
+              source: scannerName,
+            }))
+            return { vulnerabilities, totalChecks: vulnerabilities.length + 10, errors: [], scannerName }
+          }
+        } catch { /* ignore */ }
+      }
+    }
+    return {
+      vulnerabilities: [],
+      totalChecks: 0,
+      errors: [`Semgrep scan failed: ${err instanceof Error ? err.message : String(err)}`],
+      scannerName,
+    }
   }
 }

@@ -8,6 +8,8 @@ import type { ScanPlan } from "./orchestrator"
 import { aggregateScanResults } from "./ai-aggregator"
 import { SCANNER_MANIFEST } from "./manifest"
 import { addLog } from "./scan-log"
+import { analyzeTarget } from "./target-analyzer"
+import type { TargetAnalysis } from "./target-analyzer"
 
 export type ScannerEngine = "ai" | "all"
 
@@ -151,28 +153,11 @@ async function executeScannersByPlan(
     // in <5s) so a small limit adds negligible wall-clock time.
     const MAX_CONCURRENT = 5
     const runOneScanner = async (s: Scanner): Promise<void> => {
-      let result: ScanResult
-      if (s.name === "crawler") {
-        const { runCrawlerScan } = await import("./crawler")
-        result = await runCrawlerScan(targetPath, {
-          onPageCrawled: (pageNum, totalEst, url, title) => {
-            const pageInfo = title ? `${url.slice(0, 60)} (${title.slice(0, 30)})` : url.slice(0, 60)
-            const crawlerIdx = scannerStatuses.findIndex(st => st.scannerName === "crawler")
-            if (crawlerIdx >= 0) scannerStatuses[crawlerIdx].count = pageNum
-            saveProgress(`🕷️ Crawling (${pageNum}/...) ${pageInfo}`, completedCount, scannerStatuses)
-          },
-        }).catch(err => ({
-          vulnerabilities: [], totalChecks: 0,
-          errors: [(err as Error).message], scannerName: s.name,
-        }))
-        if (sessionId) addLog(sessionId, "scanner", "info", `Starting ${s.displayName}`, undefined, s.name)
-      } else {
-        if (sessionId) addLog(sessionId, "scanner", "info", `Starting ${s.displayName}`, undefined, s.name)
-        result = await s.scan(targetPath).catch(err => ({
-          vulnerabilities: [], totalChecks: 0,
-          errors: [(err as Error).message], scannerName: s.name,
-        }))
-      }
+      if (sessionId) addLog(sessionId, "scanner", "info", `Starting ${s.displayName}`, undefined, s.name)
+      const result = await s.scan(targetPath).catch(err => ({
+        vulnerabilities: [], totalChecks: 0,
+        errors: [(err as Error).message], scannerName: s.name,
+      }))
       const si = scannerStatuses.findIndex(st => st.scannerName === s.name)
       if (si >= 0) {
         scannerStatuses[si].status = result.errors.length > 0 ? "failed" : "completed"
@@ -183,8 +168,8 @@ async function executeScannersByPlan(
       if (sessionId) {
         if (result.errors.length > 0) {
           const errMsg = result.errors.join("; ")
-          const level = /no historical|not found|could not fetch|no results/i.test(errMsg) ? "info"
-            : /not found|not installed/i.test(errMsg) ? "warn" : "error"
+          const level = /no historical|not found|could not fetch|no results|no .* found/i.test(errMsg) ? "info"
+            : /not found|not installed|no .* found/i.test(errMsg) ? "warn" : "error"
           addLog(sessionId, "scanner", level, `${s.displayName} ${level === "info" ? "completed with note" : level === "warn" ? "skipped" : "failed"}`, errMsg, s.name)
         } else {
           addLog(sessionId, "scanner", "info", `${s.displayName} complete: ${result.vulnerabilities.length} issues`,
@@ -212,119 +197,9 @@ async function executeScannersByPlan(
     }
   }
 
-  // ── Dynamic Deep Scan Escalation ──────────────────────────────────
-  // After all planned phases complete, check for indicators that suggest
-  // injection/deep scanning is warranted. If found AND the plan didn't
-  // include deep scanners (wapiti, sqlmap, nuclei), add them dynamically.
-  if (mode === "url") {
-    const hasForms = allResults.some(r =>
-      r.scannerName === "form-analyzer" && r.vulnerabilities.length > 0,
-    )
-    const hasErrorLeaks = allResults.some(r =>
-      r.scannerName === "error-analyzer" && r.vulnerabilities.length > 0,
-    )
-    const isLiveWeb = allResults.some(r =>
-      r.scannerName === "httpx" && r.errors.length === 0,
-    )
-    const hasApiIndicators = allResults.some(r =>
-      r.scannerName === "kiterunner" && r.vulnerabilities.length > 0,
-    )
-    const needsDeepScan = hasForms || hasErrorLeaks || hasApiIndicators || isLiveWeb
 
-    const deepScannerNames = ["wapiti", "sqlmap", "nuclei"]
-    const planIncludesDeep = deepScannerNames.some(n =>
-      orderedNames.includes(n),
-    )
-    const availableDeep = deepScannerNames.filter(n =>
-      scannerMap.has(n),
-    )
 
-    if (needsDeepScan && !planIncludesDeep && availableDeep.length > 0) {
-      const deepScanners = availableDeep
-        .map(n => scannerMap.get(n)!)
-        .filter(s => s.isAvailable())
 
-      if (deepScanners.length > 0) {
-        saveProgress(
-          "⚡ Dynamic escalation: injection indicators detected — adding deep scanners...",
-          completedCount,
-          scannerStatuses,
-        )
-
-        if (sessionId) {
-          addLog(sessionId, "system", "info", `Dynamic escalation triggered`,
-            `Reason: ${hasForms ? "forms" : ""}${hasErrorLeaks ? " error_leaks" : ""}${hasApiIndicators ? " api_patterns" : ""}${isLiveWeb ? " live_web" : ""}. Adding: ${deepScanners.map(s => s.displayName).join(", ")}`)
-        }
-
-        for (const s of deepScanners) {
-          scannerStatuses.push({
-            scannerName: s.name,
-            displayName: s.displayName,
-            category: s.category,
-            count: 0,
-            errors: [],
-            status: "running",
-          })
-        }
-
-        const deepResults = await Promise.all(
-          deepScanners.map(async s => {
-            const result = await s.scan(targetPath).catch(err => ({
-              vulnerabilities: [],
-              totalChecks: 0,
-              errors: [(err as Error).message],
-              scannerName: s.name,
-            }))
-            const idx = scannerStatuses.findIndex(st => st.scannerName === s.name)
-            if (idx >= 0) {
-              scannerStatuses[idx].status = result.errors.length > 0 ? "failed" : "completed"
-              scannerStatuses[idx].count = result.vulnerabilities.length
-              scannerStatuses[idx].errors = result.errors
-            }
-            completedCount++
-            saveProgress(
-              `Deep scan: ${s.displayName} completed`,
-              completedCount,
-              scannerStatuses,
-            )
-            return result
-          }),
-        )
-        allResults.push(...deepResults)
-
-        if (sessionId) {
-          updateSession(sessionId, {
-            dynamicEscalation: {
-              reason: hasForms ? "forms_detected" : hasErrorLeaks ? "error_leaks_detected" : hasApiIndicators ? "api_detected" : "live_web_app",
-              scannersAdded: deepScanners.map(s => s.name),
-              totalVulnsFound: deepResults.reduce((sum, r) => sum + r.vulnerabilities.length, 0),
-            },
-          })
-        }
-      }
-    }
-  }
-
-  // ── Store Crawler Results ─────────────────────────────────────────
-  // Extract crawl data from the crawler scanner and persist to session
-  if (sessionId) {
-    for (const r of allResults) {
-      if (r.scannerName === "crawler" && (r as any).crawlResult) {
-        const cr = (r as any).crawlResult as import("./crawler").CrawlResult
-        updateSession(sessionId, {
-          crawlData: {
-            totalPages: cr.totalPages,
-            totalForms: cr.totalForms,
-            totalPasswordFields: cr.totalPasswordFields,
-            totalFileUploads: cr.totalFileUploads,
-            sitemap: cr.sitemap,
-            durationMs: cr.durationMs,
-          },
-        })
-        break
-      }
-    }
-  }
 
   // ── AI Aggregation Phase ──────────────────────────────────────────
   // Use DeepSeek to cross-correlate findings across scanners,
@@ -486,13 +361,6 @@ async function runFallbackScan(
     let eta: number
     if (doneCount === 0) {
       eta = 0
-    } else if (mode === "url") {
-      completedTimes.push(elapsed)
-      const maxT = Math.max(...completedTimes)
-      const remaining = totalScanners - doneCount
-      const confidence = doneCount / totalScanners
-      const estimatedTotal = Math.round(maxT * (1 + (1 - confidence) * 3))
-      eta = Math.max(Math.round(elapsed * 0.3), estimatedTotal - elapsed)
     } else {
       eta = Math.round((elapsed / doneCount) * (totalScanners - doneCount))
     }
@@ -538,7 +406,7 @@ async function runFallbackScan(
           if (sessionId) {
             if (result.errors.length > 0) {
               const errMsg = result.errors.join("; ")
-              const isExpected = /no historical|not found|could not fetch|no results/i.test(errMsg)
+              const isExpected = /no historical|not found|could not fetch|no results|no .* found/i.test(errMsg)
               const isMissingTool = /not found|not installed/i.test(errMsg)
               const level = isMissingTool ? "warn" : isExpected ? "info" : "error"
               addLog(sessionId, "scanner", level,
@@ -577,44 +445,23 @@ async function runFallbackScan(
       scanners.map(s => s.displayName).join(", "))
   }
 
-  if (mode === "url") {
-    // URL mode: ordered batches by scanner category
-    const categoryOrder = ["web", "network", "dns", "osint", "filesystem", "ai"]
+  // Source mode: ordered batches by scanner type, lower concurrency
+  // to avoid disk I/O contention. AI scanner runs last.
+  const aiScanners = scanners.filter(s => s.name === "ai-scanner")
+  const traditionalScanners = scanners.filter(s => s.name !== "ai-scanner")
+  const CONCURRENCY = 4
 
-    for (const cat of categoryOrder) {
-      const batch = scanners.filter(s => s.category === cat)
-      if (batch.length === 0) continue
+  for (let i = 0; i < traditionalScanners.length; i += CONCURRENCY) {
+    const batch = traditionalScanners.slice(i, i + CONCURRENCY)
+    const batchLabel = `source scanners (batch ${Math.floor(i / CONCURRENCY) + 1}/${Math.ceil(traditionalScanners.length / CONCURRENCY)})`
+    const results = await runScannerBatch(batch, batchLabel)
+    allResults.push(...results)
+  }
 
-      const batchLabel = `${cat} scanners (${batch.length})`
-      const results = await runScannerBatch(batch, batchLabel)
-      allResults.push(...results)
-    }
-
-    // Catch any scanners with uncategorized categories
-    const uncategorized = scanners.filter(s => !categoryOrder.includes(s.category))
-    if (uncategorized.length > 0) {
-      const results = await runScannerBatch(uncategorized, `other scanners (${uncategorized.length})`)
-      allResults.push(...results)
-    }
-  } else {
-    // Source mode: ordered batches by scanner type, lower concurrency
-    // to avoid disk I/O contention. AI scanner runs last.
-    const aiScanners = scanners.filter(s => s.name === "ai-scanner")
-    const traditionalScanners = scanners.filter(s => s.name !== "ai-scanner")
-    const CONCURRENCY = 4
-
-    for (let i = 0; i < traditionalScanners.length; i += CONCURRENCY) {
-      const batch = traditionalScanners.slice(i, i + CONCURRENCY)
-      const batchLabel = `source scanners (batch ${Math.floor(i / CONCURRENCY) + 1}/${Math.ceil(traditionalScanners.length / CONCURRENCY)})`
-      const results = await runScannerBatch(batch, batchLabel)
-      allResults.push(...results)
-    }
-
-    // Run AI scanner(s) last (network-bound)
-    if (aiScanners.length > 0) {
-      const results = await runScannerBatch(aiScanners, "ai scanner")
-      allResults.push(...results)
-    }
+  // Run AI scanner(s) last (network-bound)
+  if (aiScanners.length > 0) {
+    const results = await runScannerBatch(aiScanners, "ai scanner")
+    allResults.push(...results)
   }
 
   // Deduplicate vulnerabilities
@@ -676,13 +523,45 @@ export async function runCompositeScan(
     })
   }
 
+  // Resolve relative path to absolute so all scanners find the target
+  targetPath = require("path").resolve(targetPath)
+
+  // ── Phase 0: Pre-scan target analysis ────────────────────────────────────
+  // 在 AI 调度前，先用工具扫描目标目录，收集真实的技术栈数据
+  // 这样 AI 就不再是靠路径字符串"猜"，而是基于实际证据做决策
+  let targetAnalysis: TargetAnalysis | null = null
+  if (sessionId) {
+    addLog(sessionId, "system", "info", `🔍 Analyzing target source code structure: ${targetPath}`)
+  }
+  try {
+    const analysisStart = Date.now()
+    targetAnalysis = analyzeTarget(targetPath)
+    const elapsed = Date.now() - analysisStart
+
+    if (sessionId) {
+      const langList = Object.entries(targetAnalysis.languages)
+        .sort(([, a], [, b]) => b.count - a.count)
+        .slice(0, 5)
+        .map(([lang, s]) => `${lang}(${s.count})`)
+        .join(", ")
+      addLog(sessionId, "system", "info",
+        `📊 Target analysis: ${targetAnalysis.totalFiles} files, ${targetAnalysis.projectTypes.join("/")}`,
+        `Languages: ${langList || "none"} | Configs: ${targetAnalysis.configDetails.map(c => c.name).join(", ") || "none"} | ${elapsed}ms`)
+    }
+  } catch (err) {
+    // 分析失败不阻塞扫描，降级为无数据
+    console.warn("[composite] Target analysis failed, proceeding without it:", err)
+    if (sessionId) {
+      addLog(sessionId, "system", "warn", "⚠ Target analysis failed, AI will decide without pre-scan data")
+    }
+  }
+
   // ── Phase 1: AI Orchestrator Planning (animated progress) ──
   const orchestrationPhases =
     engine === "ai"
       ? [
-          "🤖 AI orchestrator: analyzing target structure...",
-          "🤖 AI orchestrator: detecting technology stack...",
-          "🤖 AI orchestrator: evaluating scanner match...",
+          "🤖 AI orchestrator: evaluating scanner match from analysis...",
+          "🤖 AI orchestrator: computing per-scanner evidence...",
           "🤖 AI orchestrator: optimizing parallel schedule...",
           "🤖 AI orchestrator: generating scan plan...",
         ]
@@ -716,6 +595,21 @@ export async function runCompositeScan(
       target: targetPath,
       availableScannerNames: scanners.map(s => s.name),
       engine,
+      targetAnalysis: targetAnalysis ?? {
+        targetPath,
+        totalFiles: 0,
+        totalDirs: 0,
+        sizeCategory: "small",
+        languages: {},
+        configFiles: {},
+        configDetails: [],
+        hasIaC: false,
+        projectTypes: ["unknown"],
+        fileTreeSample: [],
+        hasPython: false,
+        hasSourceCode: false,
+        analysisTimeMs: 0,
+      },
     })
     clearInterval(phaseTimer)
 

@@ -1,4 +1,4 @@
-import { execSync } from "child_process"
+import { execAsync } from "./exec"
 import { existsSync } from "fs"
 import { join } from "path"
 import type { Vulnerability } from "@/lib/api/types"
@@ -28,6 +28,7 @@ function severityMap(sev: string): "Critical" | "High" | "Medium" | "Low" {
 
 function isAvailable(): boolean {
   try {
+    const { execSync } = require("child_process")
     execSync("npm --version", { stdio: "pipe", timeout: 5000 })
     return true
   } catch {
@@ -45,20 +46,20 @@ export async function runNpmAuditScan(targetPath: string): Promise<ScanResult> {
   const pkgJsonPath = join(targetPath, "package.json")
   const nodeModulesPath = join(targetPath, "node_modules")
   if (!existsSync(pkgJsonPath)) {
-    return { vulnerabilities: [], totalChecks: 0, errors: ["npm-audit skipped: no package.json found"], scannerName }
+    return { vulnerabilities: [], totalChecks: 0, errors: [], scannerName }
   }
   if (!existsSync(nodeModulesPath)) {
-    return { vulnerabilities: [], totalChecks: 0, errors: ["npm-audit skipped: no node_modules found (run npm install first)"], scannerName }
+    return { vulnerabilities: [], totalChecks: 0, errors: [], scannerName }
   }
 
   // Capture json output — npm audit exits non-zero when vulns exist
   let jsonStr = ""
   try {
-    const output = execSync(
+    const { stdout } = await execAsync(
       `npm audit --json --registry=https://registry.npmjs.org`,
-      { timeout: 60000, maxBuffer: 10 * 1024 * 1024, stdio: ["pipe", "pipe", "pipe"], cwd: targetPath },
+      { timeout: 60000, maxBuffer: 10 * 1024 * 1024, cwd: targetPath },
     )
-    jsonStr = output.toString().trim()
+    jsonStr = stdout.trim()
   } catch (err: unknown) {
     if (err instanceof Error && "stdout" in err) {
       const stdout = (err as { stdout: string }).stdout?.toString().trim()

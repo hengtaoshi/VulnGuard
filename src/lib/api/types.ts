@@ -91,22 +91,8 @@ export interface ScanDetail {
     aiReview: boolean
     scanPriority: "speed" | "depth" | "balanced"
   }
-  dynamicEscalation?: {
-    reason: string
-    scannersAdded: string[]
-    totalVulnsFound: number
-  }
   /** Full scan activity log */
   logs?: LogEntry[]
-  /** Web crawler discovery results */
-  crawlData?: {
-    totalPages: number
-    totalForms: number
-    totalPasswordFields: number
-    totalFileUploads: number
-    sitemap: { url: string; title: string; depth: number }[]
-    durationMs: number
-  }
   createdAt?: string
 }
 

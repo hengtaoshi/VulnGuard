@@ -1,4 +1,4 @@
-import { execSync } from "child_process"
+import { execAsync } from "./exec"
 import type { Vulnerability } from "@/lib/api/types"
 import type { ScanResult } from "./types"
 
@@ -23,6 +23,7 @@ function severityFromScore(score?: number): "Critical" | "High" | "Medium" | "Lo
 
 function isAvailable(): boolean {
   try {
+    const { execSync } = require("child_process")
     execSync("pip-audit --version", { stdio: "pipe", timeout: 5000 })
     return true
   } catch {
@@ -40,24 +41,24 @@ export async function runPipAuditScan(targetPath: string): Promise<ScanResult> {
     const requirementsPath = `${targetPath}/requirements.txt`
     // Check if requirements.txt exists first
     try {
-      execSync(`test -f "${requirementsPath}" || dir "${requirementsPath}" 2>nul`, { stdio: "pipe", timeout: 5000 })
+      await execAsync(`test -f "${requirementsPath}" || dir "${requirementsPath}" 2>nul`, { timeout: 5000 })
     } catch {
       return { vulnerabilities: [], totalChecks: 0, errors: [], scannerName }
     }
 
-    const output = execSync(
+    const { stdout } = await execAsync(
       `pip-audit --requirement "${requirementsPath}" --format=json`,
-      { timeout: 60000, maxBuffer: 10 * 1024 * 1024, stdio: ["pipe", "pipe", "pipe"] },
+      { timeout: 60000, maxBuffer: 10 * 1024 * 1024 },
     )
 
-    const stdout = output.toString().trim()
-    const jsonStart = stdout.indexOf("{")
-    const jsonEnd = stdout.lastIndexOf("}")
+    const trimmed = stdout.trim()
+    const jsonStart = trimmed.indexOf("{")
+    const jsonEnd = trimmed.lastIndexOf("}")
     if (jsonStart < 0 || jsonEnd < 0) {
       return { vulnerabilities: [], totalChecks: 0, errors: ["No JSON output from pip-audit"], scannerName }
     }
 
-    const parsed = JSON.parse(stdout.slice(jsonStart, jsonEnd + 1))
+    const parsed = JSON.parse(trimmed.slice(jsonStart, jsonEnd + 1))
     const findings: PipAuditFinding[] = parsed.dependencies || []
 
     const vulnerabilities: Vulnerability[] = []

@@ -1,4 +1,4 @@
-import { execSync } from "child_process"
+import { execAsync } from "./exec"
 import { join, resolve } from "path"
 import type { Vulnerability } from "@/lib/api/types"
 import type { ScanResult } from "./types"
@@ -27,6 +27,7 @@ const GITLEAKS_PATH = join(process.cwd(), "tools", "bin", "gitleaks.exe")
 
 function isAvailable(): boolean {
   try {
+    const { execSync } = require("child_process")
     execSync(`"${GITLEAKS_PATH}" version`, { stdio: "pipe", timeout: 5000 })
     return true
   } catch {
@@ -43,11 +44,11 @@ export async function runGitleaksScan(targetPath: string): Promise<ScanResult> {
   let rawOutput = ""
   try {
     const absolutePath = resolve(targetPath)
-    const output = execSync(
+    const { stdout } = await execAsync(
       `"${GITLEAKS_PATH}" detect --source="${absolutePath}" --no-git --no-banner --report-format=json --report-path=-`,
-      { timeout: 60000, maxBuffer: 10 * 1024 * 1024, stdio: ["pipe", "pipe", "pipe"] },
+      { timeout: 60000, maxBuffer: 10 * 1024 * 1024 },
     )
-    rawOutput = output.toString().trim()
+    rawOutput = stdout.trim()
   } catch (err: unknown) {
     // Gitleaks exits non-zero when leaks are found — capture output from the error
     if (err instanceof Error && "stdout" in err) {

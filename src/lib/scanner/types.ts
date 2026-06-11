@@ -5,8 +5,6 @@ export interface ScanResult {
   totalChecks: number
   errors: string[]
   scannerName: string
-  /** Optional crawl result from the crawler scanner */
-  crawlResult?: import("./crawler").CrawlResult
 }
 
 export interface Scanner {

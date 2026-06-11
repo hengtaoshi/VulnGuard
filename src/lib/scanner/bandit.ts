@@ -1,4 +1,4 @@
-import { execSync } from "child_process"
+import { execAsync } from "./exec"
 import type { Vulnerability } from "@/lib/api/types"
 import type { ScanResult } from "./types"
 
@@ -28,6 +28,7 @@ function severityMap(sev: string): "Critical" | "High" | "Medium" | "Low" {
 
 function isAvailable(): boolean {
   try {
+    const { execSync } = require("child_process")
     execSync("bandit --version", { stdio: "pipe", timeout: 5000 })
     return true
   } catch {
@@ -35,26 +36,13 @@ function isAvailable(): boolean {
   }
 }
 
-export async function runBanditScan(targetPath: string): Promise<ScanResult> {
-  const scannerName = "bandit"
-  if (!isAvailable()) {
-    return { vulnerabilities: [], totalChecks: 0, errors: ["Bandit not installed. Run: pip install bandit"], scannerName }
-  }
+function parseBanditJson(stdout: string): ScanResult | null {
+  const trimmed = stdout.trim()
+  const jsonStart = trimmed.indexOf("{")
+  if (jsonStart < 0) return null
 
   try {
-    const output = execSync(
-      `bandit -r "${targetPath}" -f json --quiet`,
-      { timeout: 120000, maxBuffer: 10 * 1024 * 1024, stdio: ["pipe", "pipe", "pipe"] },
-    )
-
-    const stdout = output.toString().trim()
-    const jsonStart = stdout.indexOf("{")
-    if (jsonStart < 0) {
-      return { vulnerabilities: [], totalChecks: 0, errors: [], scannerName }
-    }
-
-    const parsed: BanditResult = JSON.parse(stdout.slice(jsonStart))
-
+    const parsed: BanditResult = JSON.parse(trimmed.slice(jsonStart))
     const vulnerabilities: Vulnerability[] = parsed.results.map((r, idx) => ({
       id: `BANDIT-${idx + 1}`,
       name: r.test_name || r.issue_text.split(". ")[0] || "Security issue",
@@ -71,13 +59,46 @@ export async function runBanditScan(targetPath: string): Promise<ScanResult> {
       vulnerabilities,
       totalChecks: parsed.results.length + 30,
       errors: [],
-      scannerName,
+      scannerName: "bandit",
     }
+  } catch {
+    return null
+  }
+}
+
+export async function runBanditScan(targetPath: string): Promise<ScanResult> {
+  const scannerName = "bandit"
+  if (!isAvailable()) {
+    return { vulnerabilities: [], totalChecks: 0, errors: ["Bandit not installed. Run: pip install bandit"], scannerName }
+  }
+
+  try {
+    const { stdout } = await execAsync(
+      `bandit -r "${targetPath}" -f json --quiet`,
+      { timeout: 120000, maxBuffer: 10 * 1024 * 1024 },
+    )
+
+    const result = parseBanditJson(stdout)
+    if (result) return result
+    return { vulnerabilities: [], totalChecks: 0, errors: [], scannerName }
   } catch (err: unknown) {
+    // Bandit exits non-zero when issues are found — stdout has the JSON
+    if (err instanceof Error && "stdout" in err) {
+      const stdout = (err as { stdout: string }).stdout?.toString().trim()
+      if (stdout) {
+        const result = parseBanditJson(stdout)
+        if (result) return result
+      }
+    }
+    // Include stderr in error message for debugging
+    const stderr = err instanceof Error && "stderr" in err
+      ? (err as { stderr: string }).stderr?.toString().trim().slice(0, 500)
+      : ""
+    const details = stderr ? `${err instanceof Error ? err.message : String(err)} — ${stderr}` : err instanceof Error ? err.message : String(err)
     return {
       vulnerabilities: [],
       totalChecks: 0,
-      errors: [`Bandit scan failed: ${err instanceof Error ? err.message : String(err)}`],
+      errors: [`Bandit scan failed: ${details}`],
       scannerName,
     }
   }

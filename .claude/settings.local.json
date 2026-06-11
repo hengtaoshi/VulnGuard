@@ -145,7 +145,11 @@
       "Bash(git init *)",
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
-      "Bash(rm -f .scans/*.json)"
+      "Bash(rm -f .scans/*.json)",
+      "Bash(git remote *)",
+      "Bash(git push *)",
+      "Bash(git commit *)",
+      "Bash(git pull *)"
     ]
   }
 }
