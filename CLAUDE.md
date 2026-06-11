@@ -5,85 +5,136 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-# Dev server (port 3008)
-npm run dev
-
-# Build
-npm run build
-
-# Production start
-npm run start
-
-# Tests (vitest)
-npm test                    # single run
-npm run test:watch          # watch mode
-
-# Lint
-npm run lint
-
-# Clear Next.js cache when encountering stale module errors
-rm -rf .next
+npm run dev       # Start Next.js dev server on port 3000
+npm run build     # Production build (standalone output)
+npm run test      # Run all tests (vitest)
+npm run test:watch # Watch mode tests
+npm run lint      # next lint
+npx tsc --noEmit  # TypeScript type-check without building
 ```
 
-## Project Architecture
+## Project Overview
 
-VulnGuard is a Next.js 14 security vulnerability scanner (App Router, `src/` directory).
+VulnGuard is a security vulnerability scanner with 27 built-in scanners, AI-driven orchestration via DeepSeek, and a bilingual (zh/en) Next.js frontend. It supports URL (DAST/black-box) and source code (SAST/SCA) scanning modes.
 
-### Scan Flow
+## Architecture
 
-1. **`/scan/new`** — User selects URL or source mode and enters a target
-2. **`POST /api/scans`** — Creates a session (stored as JSON in `.scans/`), starts `runCompositeScan()` in background, returns immediately
-3. **`/scan/[id]`** — Polls `GET /api/scans/[id]` every 1 second while scanning, displays progress bar + per-scanner status
-4. When scan completes, the session is updated with results and the page shows the report
+### Scanner Engine (`src/lib/scanner/`)
 
-### Key Modules
+Every scanner implements the `Scanner` interface with `category` as a free-form string:
 
-- **`src/lib/scanner/`** — All scanner orchestration
-  - `composite.ts` — Runs all enabled scanners, deduplicates vulnerabilities, tracks progress
-  - `registry.ts` — Scanner definitions (name, category, availability check)
-  - `scan-store.ts` — Persistent JSON-file-based session storage
-  - `types.ts` — `Scanner`, `ScanResult` interfaces
-  - Individual scanners: `semgrep.ts`, `gitleaks.ts`, `bandit.ts`, `npm-audit.ts`, `pip-audit.ts`, `trivy.ts`, `checkov.ts`, `nuclei.ts`, `wapiti.ts`, `sqlmap.ts`
+```typescript
+interface Scanner {
+  name: string
+  displayName: string
+  category: string   // "sast" | "secret" | "dependency" | "filesystem" | "ai" | "dns" | "network" | "web" | "osint"
+  isAvailable(): boolean
+  scan(targetPath: string): Promise<ScanResult>
+}
+```
 
-- **`src/app/api/scans/`** — API routes
-  - `route.ts` — `GET` (list scans), `POST` (create + background scan)
-  - `[id]/route.ts` — `GET` single scan detail
+**27 scanners** registered in `registry.ts`, divided into implementation types:
 
-- **`src/lib/api/`** — Frontend data layer
-  - `types.ts` — `ScanDetail`, `Vulnerability`, `ScanProgress` etc.
-  - `hooks.ts` — React Query hooks
-  - `client.ts` — fetch wrappers
+| Type | Scanners | Availability |
+|------|----------|-------------|
+| Node.js native (6) | http-headers, cors-detector, form-analyzer, error-analyzer, favicon-analyzer, third-party-deps | Always available |
+| Node.js native (2) | tls-analyzer, gitdumper | Always available |
+| Go CLI tools (10) | ffuf, gobuster, kiterunner, httpx, subfinder, shuffledns, gau, assetfinder, waybackurls, amass | Require `.exe` in `tools/bin/` |
+| Python CLI tools (3) | wafw00f, bandit, checkov | Pip-installed |
+| Existing source scanners (5) | semgrep, gitleaks, npm-audit, pip-audit, trivy | Binary-dependent |
+| Existing DAST (2) | nuclei, wapiti, sqlmap | Binary-dependent |
+| AI scanner (1) | ai-scanner | Requires `DEEPSEEK_API_KEY` |
 
-- **`src/components/`** — UI components (shadcn/ui style)
-  - `layout/` — App shell (sidebar + header)
-  - `ui/` — Primitive components
+### Scanner Categories
 
-- **`src/lib/i18n/`** — Chinese/English i18n with dot-path keys (e.g., `t("scan.detail.riskScore")`)
+- **dns**: subfinder, assetfinder, shuffledns, amass — subdomain enumeration
+- **network**: nmap, tls-analyzer — port scanning, certificate analysis
+- **web**: ffuf, gobuster, kiterunner, httpx, wafw00f, gitdumper, http-headers, cors-detector, form-analyzer, error-analyzer, favicon-analyzer, third-party-deps — web probing, fingerprinting, content discovery, security header analysis
+- **osint**: gau, waybackurls — historical URL gathering from archives
+- **sast**: semgrep, bandit — source code static analysis
+- **secret**: gitleaks — hardcoded secrets detection
+- **dependency**: npm-audit, pip-audit — dependency CVE scanning
+- **filesystem**: checkov, trivy, nuclei, wapiti, sqlmap — IaC, OS packages, template-based CVE, DAST
+- **ai**: ai-scanner — DeepSeek LLM analysis
 
-### Scan Modes
+### Execution Flow
 
-- **URL mode**: Only runs DAST scanners (`wapiti`, `sqlmap`) sequentially to avoid interference
-- **Source mode**: Runs file scanners (semgrep, gitleaks, bandit, npm/pip audit, trivy, checkov, nuclei) in batches of 4 concurrently
+```
+POST /api/scans { target, mode, engine }
+  → createSession() (writes JSON to .scans/{id}.json)
+  → runCompositeScan() (background, not awaited — returns { id, status: "pending" } immediately)
+```
 
-### Scanner Interface
+The composite scan has 3 phases:
 
-Each scanner in `registry.ts` implements `{ name, displayName, category, isAvailable(), scan(targetPath) }`. The `scan()` function must return `ScanResult { vulnerabilities, totalChecks, errors, scannerName }`.
+**Phase 1 — AI Orchestrator Planning**: `createOrchestratorPlan()` calls DeepSeek with a professional system prompt that analyzes the target across 5 steps (target analysis → scanner category selection → engine mode rules → 5-phase parallel grouping → priority adjustment). Returns a `ScanPlan` with `selectedScanners`, `parallelGroups`, `scanPriority`, and `aiReview` flag.
 
-### Progress Tracking
+**Phase 2 — Scanner Execution**: `executeScannersByPlan()` runs scanners following the plan's `parallelGroups` (groups run sequentially, scanners within a group run concurrently). Progress is tracked via `updateSession()` which the frontend polls every 1s.
 
-`composite.ts` updates `updateSession(id, { progress: { percent, currentScanner, scannerStatuses } })` as each scanner runs. The frontend polls `GET /api/scans/[id]` every 1s. Progress is cleared (`{ progress: undefined }`) when the scan completes.
+**Phase 3 — AI Aggregation** (optional, for "ai"/"all" engines): `aggregateScanResults()` calls DeepSeek to cross-correlate findings across all scanners, eliminate false positives, merge duplicate findings, and produce a unified report with confidence levels and priority actions. Falls back to simple dedup by `name:location:description(80chars)` if AI is unavailable.
 
-### Tools Directory
+### Engine Modes
 
-`tools/bin/` contains vendored binaries (gitleaks.exe, trivy.exe, nuclei.exe). `tools/semgrep-rules/` and `tools/nuclei-templates/` hold rule files. These are referenced in scanner modules via `join(CWD, "tools", ...)`.
+- **`ai`**: Efficient — orchestrator selects the optimal subset of scanners based on target analysis, uses 5-phase parallel grouping for speed
+- **`all`**: Full coverage — orchestrator selects all available scanners, forces AI code review, max depth priority
 
-### Windows Proxy Issue
+Both modes fall back to `runFallbackScan()` (manifest-based scanner filtering by mode) if DeepSeek is unreachable.
 
-Wapiti and SQLMap (Python tools) need `NO_PROXY=*` in their `execSync` env to bypass the Windows system proxy when scanning localhost targets.
+### Key Files
 
-### Style / Conventions
+| File | Purpose |
+|------|---------|
+| `registry.ts` | All 27 scanner definitions with `isAvailable()` checks |
+| `manifest.ts` | Scanner metadata (description, scanTypes, duration, priority, techIndicators, limitations) — drives AI orchestrator decisions |
+| `orchestrator.ts` | DeepSeek-powered scan plan generator with 5-step decision prompt |
+| `composite.ts` | Entry point: orchestrator → execution → aggregation, progress tracking |
+| `ai-aggregator.ts` | DeepSeek-based cross-correlation and false positive elimination |
+| `scan-store.ts` | File-based CRUD for scan sessions (`.scans/` or `data/scans/`) |
+| `types.ts` | `Scanner`, `ScanResult`, `AggregationReport`, `AggregatedFinding`, `Confidence` |
 
-- `@/` path alias maps to `./src/`
-- Tailwind CSS for styling (dark mode default)
-- `"use client"` for interactive components, server components by default
-- i18n keys in dot notation, translations in `zh.ts` / `en.ts`
+### Data Flow
+
+```
+Frontend                         API                          Scanner Engine
+───────                          ───                           ─────────────
+POST /api/scans ──────────────→  createSession() ──→ .scans/{id}.json
+                                  runCompositeScan() (bg)
+                                    ├─ createOrchestratorPlan() → DeepSeek API
+                                    ├─ executeScannersByPlan()
+                                    │   ├─ dns-scanners (subfinder, amass, ...)
+                                    │   ├─ web-probes (httpx, wafw00f)
+                                    │   ├─ web-fuzzers (ffuf, gobuster, ...)
+                                    │   ├─ http-analyzer (headers, cors, ...)
+                                    │   ├─ tls-analyzer
+                                    │   ├─ gitdumper
+                                    │   ├─ osint-scanners (gau, waybackurls)
+                                    │   └─ npmap-scan
+                                    └─ aggregateScanResults() → DeepSeek API
+                                  ← CompositeResult
+
+GET /api/scans/[id] (poll 1s) ─→  readSession() ──→ progress { percent, currentScanner, eta, scannerStatuses[] }
+```
+
+### Tool Binary Management
+
+- CLI tool `.exe` files live in `tools/bin/` and are gitignored
+- Node.js native scanners have no binary dependency
+- `isAvailable()` checks binary presence at scan time — missing tools are skipped gracefully
+- Wordlist for fuzzers: `tools/wordlists/common.txt`
+
+### Environment Variables
+
+```
+DEEPSEEK_API_KEY=sk-...   # Required for AI scanner + orchestrator + aggregation
+DEEPSEEK_BASE_URL=...     # Optional, default https://api.deekseek.com
+DEEPSEEK_MODEL=...        # Optional, default deepseek-v4-flash
+HTTP_PROXY=...            # For Go tool downloads
+```
+
+### Frontend
+
+- Pages: `/` (dashboard), `/scan/new`, `/scan/[id]` (detail + progress polling), `/scan/history`, `/reports`, `/settings`
+- UI: shadcn/ui components in `src/components/ui/`, layout in `src/components/layout/`
+- State: React Query (`@tanstack/react-query`)
+- i18n: Custom context-based system in `src/lib/i18n/`, defaults to Chinese with English fallback
+- Charts: Recharts for dashboard trend visualization

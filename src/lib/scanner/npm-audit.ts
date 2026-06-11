@@ -1,4 +1,6 @@
 import { execSync } from "child_process"
+import { existsSync } from "fs"
+import { join } from "path"
 import type { Vulnerability } from "@/lib/api/types"
 import type { ScanResult } from "./types"
 
@@ -37,6 +39,16 @@ export async function runNpmAuditScan(targetPath: string): Promise<ScanResult> {
   const scannerName = "npm-audit"
   if (!isAvailable()) {
     return { vulnerabilities: [], totalChecks: 0, errors: ["npm not found"], scannerName }
+  }
+
+  // Check if target has a package.json and node_modules
+  const pkgJsonPath = join(targetPath, "package.json")
+  const nodeModulesPath = join(targetPath, "node_modules")
+  if (!existsSync(pkgJsonPath)) {
+    return { vulnerabilities: [], totalChecks: 0, errors: ["npm-audit skipped: no package.json found"], scannerName }
+  }
+  if (!existsSync(nodeModulesPath)) {
+    return { vulnerabilities: [], totalChecks: 0, errors: ["npm-audit skipped: no node_modules found (run npm install first)"], scannerName }
   }
 
   // Capture json output — npm audit exits non-zero when vulns exist

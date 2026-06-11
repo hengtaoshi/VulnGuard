@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getSession, toScanDetail } from "@/lib/scanner/scan-store"
+import { getSession, toScanDetail, deleteSession } from "@/lib/scanner/scan-store"
 
 export async function GET(_request: Request, { params }: { params: { id: string } }) {
   await new Promise(r => setTimeout(r, 200))
@@ -10,4 +10,12 @@ export async function GET(_request: Request, { params }: { params: { id: string 
   }
 
   return NextResponse.json(toScanDetail(session))
+}
+
+export async function DELETE(_request: Request, { params }: { params: { id: string } }) {
+  const deleted = deleteSession(params.id)
+  if (!deleted) {
+    return NextResponse.json({ error: "Scan not found" }, { status: 404 })
+  }
+  return NextResponse.json({ success: true })
 }

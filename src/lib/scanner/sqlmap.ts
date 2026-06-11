@@ -1,13 +1,15 @@
-import { execSync } from "child_process"
+import { execSync, spawn } from "child_process"
 import { tmpdir } from "os"
 import { rmSync } from "fs"
 import { join } from "path"
+
+const SQLMAP_PATH = "C:\\Users\\SHT\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\sqlmap.exe"
 import type { Vulnerability } from "@/lib/api/types"
 import type { ScanResult } from "./types"
 
 function isAvailable(): boolean {
   try {
-    execSync("sqlmap --version", { stdio: "pipe", timeout: 5000 })
+    execSync(`"${SQLMAP_PATH}" --version`, { stdio: "pipe", timeout: 5000 })
     return true
   } catch {
     return false
@@ -17,19 +19,16 @@ function isAvailable(): boolean {
 function parseSqlmapOutput(output: string, url: string): Vulnerability[] {
   const vulnerabilities: Vulnerability[] = []
 
-  // Quick check if vulnerable at all
   if (!output.includes("vulnerable") && !output.includes("injection point")) {
     return vulnerabilities
   }
 
-  // Find all Parameter: lines and extract metadata from context after each
   const paramRegex = /(?:^|\n)Parameter:\s+(\S+)\s+\((\w+)\)/gm
   let paramMatch: RegExpExecArray | null
   while ((paramMatch = paramRegex.exec(output)) !== null) {
     const param = paramMatch[1]
     const method = paramMatch[2]
 
-    // Get text after this parameter line to extract Type/Title/Payload
     const afterMatch = output.slice(paramMatch.index)
 
     const typeMatch = afterMatch.match(/Type:\s+(.+)/)
@@ -49,12 +48,70 @@ function parseSqlmapOutput(output: string, url: string): Vulnerability[] {
       location: `${url}${method.toLowerCase() === "get" && !url.includes("?") ? "?" : method.toLowerCase() === "get" ? "&" : ""}${param}=`,
       cve: "SQLI",
       description: `SQL injection in "${param}" (${method}).\nType: ${type}\nTechnique: ${title}\nPayload: ${payload || "(see sqlmap log)"}`,
-      recommendation: `Use parameterized queries (prepared statements). Validate and sanitize all user inputs.`,
+      recommendation: "Use parameterized queries (prepared statements). Validate and sanitize all user inputs.",
       source: "sqlmap",
     })
   }
 
   return vulnerabilities
+}
+
+function runSqlmapProcess(
+  targetUrl: string,
+  outputDir: string,
+  timeoutMs: number,
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const args = [
+      "-u", targetUrl,
+      "--batch",
+      "--level=1",
+      "--forms",
+      "--text-only",
+      "--flush-session",
+      "--disable-coloring",
+      "--output-dir", outputDir,
+      "--random-agent",
+    ]
+
+    const proc = spawn(SQLMAP_PATH, args, {
+      env: { ...process.env, NO_PROXY: "*", no_proxy: "*", PYTHONUTF8: "1" },
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    })
+
+    let stdout = ""
+    let stderr = ""
+
+    proc.stdout.on("data", (data: Buffer) => {
+      stdout += data.toString()
+    })
+
+    proc.stderr.on("data", (data: Buffer) => {
+      stderr += data.toString()
+    })
+
+    const timer = setTimeout(() => {
+      proc.kill()
+      reject(new Error(`SQLMap timed out after ${timeoutMs / 1000}s`))
+    }, timeoutMs)
+
+    proc.on("close", (code) => {
+      clearTimeout(timer)
+      // sqlmap exit codes: 0=clean, 1=error, 2=vulnerable
+      if (code === 2 || code === 0) {
+        resolve({ stdout, stderr })
+      } else {
+        const msg = stderr.trim() || stdout.trim() || `exit code ${code}`
+        reject(new Error(`SQLMap exited with code ${code}: ${msg.slice(0, 200)}`))
+      }
+    })
+
+    proc.on("error", (err) => {
+      clearTimeout(timer)
+      reject(new Error(`SQLMap process error: ${err.message}`))
+    })
+  })
 }
 
 export async function runSqlmapScan(targetUrl: string): Promise<ScanResult> {
@@ -66,56 +123,18 @@ export async function runSqlmapScan(targetUrl: string): Promise<ScanResult> {
   const outputDir = join(tmpdir(), `sqlmap-run-${Date.now()}`)
 
   try {
-    // Extract base URL and potentially add a test parameter if none exists
-    let scanUrl = targetUrl
-    // If URL has no query parameter, try common ones or use the URL directly
-    if (!scanUrl.includes("?")) {
-      // For URLs without obvious parameters, sqlmap can crawl, but that's slow.
-      // We'll try the URL as-is and let sqlmap test common locations
-    }
+    const { stdout, stderr } = await runSqlmapProcess(targetUrl, outputDir, 120000)
 
-    // Run sqlmap: level 3 adds ORDER BY for UNION tests, risk 1 keeps payloads minimal
-    const output = execSync(
-      `sqlmap -u "${scanUrl}" --batch --level=3 --risk=1 --text-only --time-sec=3 --flush-session --disable-coloring --output-dir="${outputDir}"`,
-      {
-        timeout: 180000,
-        maxBuffer: 10 * 1024 * 1024,
-        stdio: ["pipe", "pipe", "pipe"],
-        env: { ...process.env, NO_PROXY: "*", no_proxy: "*" },
-      },
-    )
-
-    const stdout = Buffer.isBuffer(output) ? output.toString("utf-8") : ""
-
-    console.log("[sqlmap] stdout length:", stdout.length)
-    console.log("[sqlmap] vulnerable:", stdout.includes("vulnerable"))
-    console.log("[sqlmap] Parameter:", stdout.includes("Parameter:"))
-
-    const vulnerabilities = parseSqlmapOutput(stdout, targetUrl)
-    console.log("[sqlmap] vulnerabilities found:", vulnerabilities.length)
-
+    const allOutput = [stdout, stderr].join("\n")
+    const vulnerabilities = parseSqlmapOutput(allOutput, targetUrl)
     const totalChecks = vulnerabilities.length > 0 ? vulnerabilities.length * 10 + 50 : 50
+
     return { vulnerabilities, totalChecks, errors: [], scannerName }
-
-  } catch (err: unknown) {
-    // sqlmap outputs findings to stderr, so check both stdout and stderr
-    const stdOutput = (err as { stdout?: Buffer | string }).stdout
-    const errOutput = (err as { stderr?: Buffer | string }).stderr
-    const allText = [
-      stdOutput ? (Buffer.isBuffer(stdOutput) ? stdOutput.toString("utf-8") : String(stdOutput)) : "",
-      errOutput ? (Buffer.isBuffer(errOutput) ? errOutput.toString("utf-8") : String(errOutput)) : "",
-    ].join("\n")
-
-    const vulnerabilities = parseSqlmapOutput(allText, targetUrl)
-    if (vulnerabilities.length > 0) {
-      const totalChecks = vulnerabilities.length * 10 + 50
-      return { vulnerabilities, totalChecks, errors: [], scannerName }
-    }
-
+  } catch (err) {
     return {
       vulnerabilities: [],
       totalChecks: 0,
-      errors: [`SQLMap scan failed: ${err instanceof Error ? err.message : String(err)}`],
+      errors: [err instanceof Error ? err.message : String(err)],
       scannerName,
     }
   } finally {
