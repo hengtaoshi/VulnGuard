@@ -6,7 +6,7 @@ export const en: TranslationDict = {
     beta: "BETA",
   },
   nav: {
-    dashboard: "Dashboard",
+    dashboard: "Security Center",
     newScan: "New Scan",
     scanHistory: "Scan History",
     reports: "Reports",

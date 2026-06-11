@@ -1,15 +1,13 @@
 import type { Vulnerability } from "@/lib/api/types"
-import type { ScanResult, AggregationReport } from "./types"
-import type { Scanner } from "./types"
-import { getAvailableScanners } from "./registry"
+import type { ScanResult, Scanner } from "./types"
+import { getAvailableScanners, getAllScanners } from "./registry"
 import { updateSession } from "./scan-store"
-import { createOrchestratorPlan } from "./orchestrator"
-import type { ScanPlan } from "./orchestrator"
-import { aggregateScanResults } from "./ai-aggregator"
-import { SCANNER_MANIFEST } from "./manifest"
 import { addLog } from "./scan-log"
 import { analyzeTarget } from "./target-analyzer"
 import type { TargetAnalysis } from "./target-analyzer"
+import { execSync } from "child_process"
+import { join } from "path"
+import { writeFileSync, existsSync, mkdirSync } from "fs"
 
 export type ScannerEngine = "ai" | "all"
 
@@ -45,20 +43,145 @@ function makeScannerStatuses(scanners: { name: string; displayName: string; cate
   }))
 }
 
-// ─── Plan-Based Execution (used by AI/All engines) ──────────────────────────
+// ─── 规则驱动的扫描器选择 ─────────────────────────────────────────────────
 
-async function executeScannersByPlan(
+function selectScannersByRules(
+  analysis: TargetAnalysis,
+  engine: ScannerEngine,
+  availableNames: string[],
+): string[] {
+  const selected: string[] = []
+  const configNames = new Set(analysis.configDetails.map(c => c.name))
+  const langs = new Set(Object.keys(analysis.languages)) // language names: "python", "javascript", etc.
+  const hasSource = analysis.hasSourceCode || analysis.totalFiles > 0
+
+  if (!hasSource) return []
+
+  // ── 总是选中的扫描器 ──────────────────────────────────────────────
+  selected.push("semgrep", "gitleaks")
+
+  // ── 语言/框架匹配 ──────────────────────────────────────────────────
+  // 注意：target-analyzer.ts 中语言 key 是名称（如 "python"），
+  // config 名称是标识符（如 "hasRequirementsTxt"）
+
+  // Python
+  if (langs.has("python") || analysis.hasPython || configNames.has("hasRequirementsTxt") || configNames.has("hasPipfile") || configNames.has("hasSetupPy")) {
+    selected.push("bandit", "pip-audit")
+  }
+
+  // JS/TS
+  if (configNames.has("hasPackageLock") || configNames.has("hasPackageJson")) {
+    selected.push("npm-audit")
+  }
+
+  // IaC
+  if (analysis.hasIaC || configNames.has("hasDockerfile") || configNames.has("hasTerraform")) {
+    selected.push("checkov")
+  }
+
+  // Java
+  if (configNames.has("hasMavenPom") || configNames.has("hasGradle")) {
+    selected.push("dependency-check")
+  }
+
+  // Go
+  if (configNames.has("hasGoMod")) {
+    selected.push("dependency-check")
+  }
+
+  // Rust
+  if (configNames.has("hasCargoToml")) {
+    selected.push("dependency-check")
+  }
+
+  // C/C++
+  if (langs.has("c") || langs.has("cpp") || configNames.has("hasConanfile") || configNames.has("hasVcpkg")) {
+    selected.push("cve-cpp")
+  }
+
+  // Swift
+  if (langs.has("swift") || configNames.has("hasSwiftPackage")) {
+    selected.push("swift")
+  }
+
+  // .NET
+  if (langs.has("csharp") || configNames.has("hasCsproj")) {
+    selected.push("dependency-check")
+  }
+
+  // ── 综合性扫描器 ─────────────────────────────────────────────────
+  // trivy: comprehensive, always useful
+  selected.push("trivy")
+
+  // nuclei: medium+ projects
+  if (analysis.totalFiles > 20) {
+    selected.push("nuclei")
+  }
+
+  // AI Scanner: deep code review (always last)
+  selected.push("ai-scanner")
+
+  // Filter by availability and deduplicate
+  const result = selected.filter((n, i, a) => a.indexOf(n) === i).filter(n => availableNames.includes(n))
+
+  // "all" engine: add every available scanner
+  if (engine === "all") {
+    return availableNames.filter(n => n !== "ai-scanner").concat("ai-scanner")
+  }
+
+  return result
+}
+
+function buildParallelGroups(scannerNames: string[], allScanners: Scanner[]): string[][] {
+  const groups: string[][] = []
+  const fast: string[] = []
+  const medium: string[] = []
+  const slow: string[] = []
+
+  const scannerMap = new Map(allScanners.map(s => [s.name, s]))
+
+  for (const name of scannerNames) {
+    const s = scannerMap.get(name)
+    if (!s) continue
+    // Categorize by scanner type
+    if (s.category === "secret" || s.name === "semgrep") {
+      fast.push(name)
+    } else if (s.category === "dependency" || s.category === "sast" || s.name === "checkov") {
+      medium.push(name)
+    } else {
+      slow.push(name)
+    }
+  }
+
+  // AI scanner always last
+  const aiIndex = slow.indexOf("ai-scanner")
+  if (aiIndex >= 0) {
+    slow.splice(aiIndex, 1)
+    slow.push("ai-scanner")
+  }
+
+  if (fast.length > 0) groups.push(fast)
+  if (medium.length > 0) groups.push(medium)
+  if (slow.length > 0) groups.push(slow)
+
+  // Fallback: if no groups formed, all in one
+  if (groups.length === 0 && scannerNames.length > 0) {
+    groups.push(scannerNames)
+  }
+
+  return groups
+}
+
+// ─── 执行扫描器 ────────────────────────────────────────────────────────────
+
+async function executeScanners(
   allScanners: Scanner[],
-  plan: ScanPlan,
+  scannerNames: string[],
   targetPath: string,
-  mode: "url" | "source",
   sessionId?: string,
 ): Promise<CompositeResult> {
   const scannerMap = new Map(allScanners.map(s => [s.name, s]))
-
-  // Build ordered scanner list from plan's parallelGroups
-  const orderedNames = plan.parallelGroups.flat()
-  const orderedScanners = orderedNames
+  const orderedScanners = scannerNames
     .map(name => scannerMap.get(name))
     .filter((s): s is Scanner => s !== undefined)
 
@@ -66,30 +189,7 @@ async function executeScannersByPlan(
     return { vulnerabilities: [], totalChecks: 0, scannerResults: [] }
   }
 
-  // ── Parallel Group Size Safeguard ──────────────────────────────────
-  // The AI orchestrator sometimes puts all scanners in a single group,
-  // which overwhelms slow dev servers and causes timeouts. Split any
-  // group larger than MAX_GROUP_SIZE into multiple sub-groups.
-  const MAX_GROUP_SIZE = 8
-  const originalGroupCount = plan.parallelGroups.length
-  const newGroups: string[][] = []
-  for (const group of plan.parallelGroups) {
-    if (group.length > MAX_GROUP_SIZE) {
-      for (let i = 0; i < group.length; i += MAX_GROUP_SIZE) {
-        newGroups.push(group.slice(i, i + MAX_GROUP_SIZE))
-      }
-    } else {
-      newGroups.push(group)
-    }
-  }
-  if (newGroups.length !== originalGroupCount) {
-    plan.parallelGroups = newGroups
-    console.warn(
-      `[composite] Split ${originalGroupCount} parallel groups into ${newGroups.length} ` +
-      `(max ${MAX_GROUP_SIZE} scanners/group) to prevent target overload`,
-    )
-  }
-
+  const groups = buildParallelGroups(scannerNames, allScanners)
   const scannerStatuses = makeScannerStatuses(orderedScanners)
   const totalScanners = orderedScanners.length
   const startTime = Date.now()
@@ -97,15 +197,12 @@ async function executeScannersByPlan(
 
   function saveProgress(currentScanner: string, doneCount: number, results: typeof scannerStatuses) {
     let percent = totalScanners > 0 ? Math.round((doneCount / totalScanners) * 100) : 100
-    // Floor at 5% while scanners are running so the frontend animation stays active
     if (percent < 5 && doneCount < totalScanners && results.some(s => s.status === "running" || s.status === "pending")) {
       percent = 5
     }
     const elapsed = Date.now() - startTime
-    let eta: number
-    if (doneCount === 0) {
-      eta = 0
-    } else {
+    let eta = 0
+    if (doneCount > 0) {
       completedTimes.push(elapsed)
       const maxT = Math.max(...completedTimes)
       const remaining = totalScanners - doneCount
@@ -123,7 +220,7 @@ async function executeScannersByPlan(
   if (sessionId) {
     updateSession(sessionId, {
       status: "scanning",
-      progress: { percent: 3, currentScanner: "Starting scanners...", elapsed: 0, eta: 0, scannerStatuses },
+      progress: { percent: 0, currentScanner: "Preparing scanners...", elapsed: 0, eta: 0, scannerStatuses },
     })
   }
 
@@ -131,7 +228,7 @@ async function executeScannersByPlan(
   let completedCount = 0
 
   // Execute groups sequentially, scanners within a group concurrently
-  for (const group of plan.parallelGroups) {
+  for (const group of groups) {
     const groupScanners = group
       .map(name => scannerMap.get(name))
       .filter((s): s is Scanner => s !== undefined)
@@ -147,11 +244,8 @@ async function executeScannersByPlan(
     const runningDisplay = groupScanners.map(s => s.displayName).join(", ")
     saveProgress(runningDisplay, completedCount, scannerStatuses)
 
-    // ── Concurrency limiter: run at most MAX_CONCURRENT scanners at once.
-    // Without this, spawning 8+ subprocesses simultaneously on Windows
-    // causes spawnSync ETIMEDOUT errors. Scanners are fast (most complete
-    // in <5s) so a small limit adds negligible wall-clock time.
     const MAX_CONCURRENT = 5
+
     const runOneScanner = async (s: Scanner): Promise<void> => {
       if (sessionId) addLog(sessionId, "scanner", "info", `Starting ${s.displayName}`, undefined, s.name)
       const result = await s.scan(targetPath).catch(err => ({
@@ -183,7 +277,7 @@ async function executeScannersByPlan(
       allResults.push(result)
     }
 
-    // Execute with sliding-window concurrency limit
+    // Sliding-window concurrency limit
     const queue = [...groupScanners]
     const inFlight = new Set<Promise<void>>()
     while (queue.length > 0 || inFlight.size > 0) {
@@ -197,274 +291,7 @@ async function executeScannersByPlan(
     }
   }
 
-
-
-
-
-  // ── AI Aggregation Phase ──────────────────────────────────────────
-  // Use DeepSeek to cross-correlate findings across scanners,
-  // eliminate false positives, and produce unified results.
-  let aggregatedVulns: Vulnerability[] | undefined
-  let aggregationReport: AggregationReport | undefined
-
-  if (allResults.length > 0) {
-    // ── AI Animation: rotating messages ──────────────────────────
-    const aiSteps = [
-      "🤖 AI aggregating: cross-correlating findings across scanners...",
-      "🤖 AI aggregating: analyzing vulnerability patterns...",
-      "🤖 AI aggregating: eliminating false positives...",
-      "🤖 AI aggregating: correlating related vulnerabilities...",
-      "🤖 AI aggregating: computing confidence scores...",
-      "🤖 AI aggregating: prioritizing high-risk findings...",
-      "🤖 AI aggregating: generating unified report...",
-    ]
-    let aiStepIdx = 0
-    saveProgress(aiSteps[0], completedCount, scannerStatuses)
-
-    if (sessionId) {
-      addLog(sessionId, "aggregation", "info", "AI aggregation starting",
-        `Correlating ${allResults.length} scanner results, ${allResults.reduce((s, r) => s + r.vulnerabilities.length, 0)} total findings`)
-    }
-
-    const aiAnimTimer = setInterval(() => {
-      aiStepIdx = (aiStepIdx + 1) % aiSteps.length
-      saveProgress(aiSteps[aiStepIdx], completedCount, scannerStatuses)
-    }, 2800)
-
-    try {
-      aggregationReport = await aggregateScanResults({
-        target: targetPath,
-        mode,
-        scannerResults: allResults.map(r => ({
-          scannerName: r.scannerName,
-          vulnerabilities: r.vulnerabilities,
-          totalChecks: r.totalChecks,
-          errors: r.errors,
-        })),
-        scannerNames: orderedScanners.map(s => s.name),
-      })
-
-      clearInterval(aiAnimTimer)
-      saveProgress("🤖 AI aggregation complete — processing results...", completedCount, scannerStatuses)
-
-      if (sessionId) {
-        addLog(sessionId, "aggregation", "info", "AI aggregation complete",
-          `${aggregationReport.findings.length} findings (${aggregationReport.falsePositivesRemoved} false positives removed, ${aggregationReport.findings.filter(f => f.isCorrelated).length} correlated)`)
-      }
-
-      // Store the full aggregation report in session
-      if (sessionId) {
-        updateSession(sessionId, {
-          aiAggregationReport: aggregationReport as any,
-        })
-      }
-
-      // Use aggregated findings (exclude false positives)
-      aggregatedVulns = aggregationReport.findings
-        .filter(f => !f.isFalsePositive)
-        .map(f => ({
-          id: f.id,
-          name: f.name,
-          severity: f.severity,
-          location: f.location,
-          cve: f.cve,
-          description: f.description,
-          recommendation: f.recommendation,
-          code: f.code,
-          source: f.detectedBy.join(", "),
-        }))
-
-      const fpCount = aggregationReport.falsePositivesRemoved
-      const correlatedCount = aggregationReport.findings.filter(f => f.isCorrelated).length
-
-      if (sessionId) {
-        const aggSummary = {
-          totalFindings: aggregationReport.findings.length,
-          falsePositivesRemoved: fpCount,
-          highConfidence: aggregationReport.findings.filter(f => f.confidence === "high").length,
-          mediumConfidence: aggregationReport.findings.filter(f => f.confidence === "medium").length,
-          lowConfidence: aggregationReport.findings.filter(f => f.confidence === "low").length,
-          correlatedFindings: correlatedCount,
-          summary: aggregationReport.summary,
-          priorityActions: aggregationReport.priorityActions,
-        }
-        updateSession(sessionId, { aiAggregation: aggSummary })
-      }
-    } catch (err) {
-      clearInterval(aiAnimTimer)
-      const msg = err instanceof Error ? err.message : String(err)
-      console.warn("[composite] AI aggregation failed, falling back to simple dedup:", msg)
-      if (sessionId) {
-        addLog(sessionId, "aggregation", "error", "AI aggregation failed, using simple dedup fallback", msg)
-      }
-    }
-  }
-
-  // ── Build Final Vulnerability List ─────────────────────────────────
-  let vulnerabilities: Vulnerability[]
-  let totalChecks: number
-
-  if (aggregatedVulns) {
-    vulnerabilities = aggregatedVulns
-    totalChecks = allResults.reduce((sum, r) => sum + r.totalChecks, 0)
-  } else {
-    // Fallback: simple dedup
-    const vulnerabilityMap = new Map<string, Vulnerability>()
-    for (const result of allResults) {
-      for (const vuln of result.vulnerabilities) {
-        const key = `${vuln.name}:${vuln.location}:${vuln.description.slice(0, 80)}`
-        if (!vulnerabilityMap.has(key)) {
-          vulnerabilityMap.set(key, vuln)
-        }
-      }
-    }
-    vulnerabilities = Array.from(vulnerabilityMap.values())
-    totalChecks = allResults.reduce((sum, r) => sum + r.totalChecks, 0)
-  }
-
-  const finalScannerResults = allResults.map(result => ({
-    scannerName: result.scannerName,
-    displayName: orderedScanners.find(s => s.name === result.scannerName)?.displayName || result.scannerName,
-    category: orderedScanners.find(s => s.name === result.scannerName)?.category || "unknown",
-    count: result.vulnerabilities.length,
-    errors: result.errors,
-  }))
-
-  return { vulnerabilities, totalChecks, scannerResults: finalScannerResults }
-}
-
-// ─── Fallback Scan (Traditional Logic) ──────────────────────────────────────
-
-async function runFallbackScan(
-  allScanners: Scanner[],
-  targetPath: string,
-  mode: "url" | "source",
-  sessionId?: string,
-): Promise<CompositeResult> {
-  // Filter scanners by mode using manifest definitions
-  const modeScannerNames = new Set(
-    SCANNER_MANIFEST.filter(e => e.supportedModes.includes(mode)).map(e => e.name),
-  )
-  let scanners = allScanners.filter(s => modeScannerNames.has(s.name))
-
-  const scannerStatuses = makeScannerStatuses(scanners)
-  const totalScanners = scanners.length
-  const startTime = Date.now()
-  const completedTimes: number[] = []
-
-  function saveProgress(currentScanner: string, doneCount: number, results: typeof scannerStatuses) {
-    let percent = totalScanners > 0 ? Math.round((doneCount / totalScanners) * 100) : 100
-    if (percent < 5 && doneCount < totalScanners && results.some(s => s.status === "running" || s.status === "pending")) {
-      percent = 5
-    }
-    const elapsed = Date.now() - startTime
-    let eta: number
-    if (doneCount === 0) {
-      eta = 0
-    } else {
-      eta = Math.round((elapsed / doneCount) * (totalScanners - doneCount))
-    }
-    if (sessionId) {
-      updateSession(sessionId, {
-        progress: { percent, currentScanner, elapsed, eta, scannerStatuses: results },
-      })
-    }
-  }
-
-  // Initialize progress (preserve a small value since orchestrator may have shown progress)
-  if (sessionId) {
-    updateSession(sessionId, {
-      status: "scanning",
-      progress: { percent: 3, currentScanner: "Starting fallback scanners...", elapsed: 0, eta: 0, scannerStatuses },
-    })
-  }
-
-  const allResults: ScanResult[] = []
-  let completedCount = 0
-
-  // ── Helper: run a batch of scanners concurrently and track progress ──
-  async function runScannerBatch(batch: Scanner[], batchLabel: string): Promise<ScanResult[]> {
-    for (const s of batch) {
-      const idx = scannerStatuses.findIndex(st => st.scannerName === s.name)
-      if (idx >= 0) scannerStatuses[idx].status = "running"
-    }
-    saveProgress(`⏳ ${batchLabel}...`, completedCount, scannerStatuses)
-
-    return Promise.all(
-      batch.map(s =>
-        s.scan(targetPath).then(result => {
-          const idx = scannerStatuses.findIndex(st => st.scannerName === s.name)
-          if (idx >= 0) {
-            scannerStatuses[idx].status = result.errors.length > 0 ? "failed" : "completed"
-            scannerStatuses[idx].count = result.vulnerabilities.length
-            scannerStatuses[idx].errors = result.errors
-          }
-          completedCount++
-          const runningNames = scannerStatuses.filter(st => st.status === "running").map(st => st.displayName)
-          saveProgress(runningNames.length > 0 ? runningNames.join(", ") : "Finalizing...", completedCount, scannerStatuses)
-
-          if (sessionId) {
-            if (result.errors.length > 0) {
-              const errMsg = result.errors.join("; ")
-              const isExpected = /no historical|not found|could not fetch|no results|no .* found/i.test(errMsg)
-              const isMissingTool = /not found|not installed/i.test(errMsg)
-              const level = isMissingTool ? "warn" : isExpected ? "info" : "error"
-              addLog(sessionId, "scanner", level,
-                `${s.displayName} ${level === "info" ? "completed with note" : level === "warn" ? "skipped" : "failed"}`,
-                errMsg, s.name)
-            } else {
-              addLog(sessionId, "scanner", "info", `${s.displayName} complete: ${result.vulnerabilities.length} issues`,
-                result.vulnerabilities.length > 0 ? `Found: ${result.vulnerabilities.slice(0, 3).map(v => v.name).join(", ")}` : undefined,
-                s.name)
-            }
-          }
-          return result
-        }).catch(err => {
-          const idx = scannerStatuses.findIndex(st => st.scannerName === s.name)
-          if (idx >= 0) {
-            scannerStatuses[idx].status = "failed"
-            scannerStatuses[idx].errors = [(err as Error).message]
-          }
-          completedCount++
-          saveProgress(s.displayName, completedCount, scannerStatuses)
-          if (sessionId) {
-            addLog(sessionId, "scanner", "error", `${s.displayName} crashed`, (err as Error).message, s.name)
-          }
-          return { vulnerabilities: [], totalChecks: 0, errors: [(err as Error).message], scannerName: s.name }
-        })
-      ),
-    )
-  }
-
-  // ── Run scanners in ordered batches ──
-  // Divide scanners into groups: fast passive → probing → fuzzing → deep
-  // This prevents one hanging scanner from blocking all results.
-
-  if (sessionId) {
-    addLog(sessionId, "system", "info", `Fallback scan starting with ${scanners.length} scanners`,
-      scanners.map(s => s.displayName).join(", "))
-  }
-
-  // Source mode: ordered batches by scanner type, lower concurrency
-  // to avoid disk I/O contention. AI scanner runs last.
-  const aiScanners = scanners.filter(s => s.name === "ai-scanner")
-  const traditionalScanners = scanners.filter(s => s.name !== "ai-scanner")
-  const CONCURRENCY = 4
-
-  for (let i = 0; i < traditionalScanners.length; i += CONCURRENCY) {
-    const batch = traditionalScanners.slice(i, i + CONCURRENCY)
-    const batchLabel = `source scanners (batch ${Math.floor(i / CONCURRENCY) + 1}/${Math.ceil(traditionalScanners.length / CONCURRENCY)})`
-    const results = await runScannerBatch(batch, batchLabel)
-    allResults.push(...results)
-  }
-
-  // Run AI scanner(s) last (network-bound)
-  if (aiScanners.length > 0) {
-    const results = await runScannerBatch(aiScanners, "ai scanner")
-    allResults.push(...results)
-  }
-
-  // Deduplicate vulnerabilities
+  // ── 确定性去重 ──────────────────────────────────────────────────────
   const vulnerabilityMap = new Map<string, Vulnerability>()
   for (const result of allResults) {
     for (const vuln of result.vulnerabilities) {
@@ -474,26 +301,25 @@ async function runFallbackScan(
       }
     }
   }
-
   const vulnerabilities = Array.from(vulnerabilityMap.values())
   const totalChecks = allResults.reduce((sum, r) => sum + r.totalChecks, 0)
 
-  if (sessionId) {
-    addLog(sessionId, "system", "info", `Fallback scan summary: ${allResults.length} scanners, ${vulnerabilities.length} vulnerabilities`)
-  }
-
   const finalScannerResults = allResults.map(result => ({
     scannerName: result.scannerName,
-    displayName: scanners.find(s => s.name === result.scannerName)?.displayName || result.scannerName,
-    category: scanners.find(s => s.name === result.scannerName)?.category || "unknown",
+    displayName: orderedScanners.find(s => s.name === result.scannerName)?.displayName || result.scannerName,
+    category: orderedScanners.find(s => s.name === result.scannerName)?.category || "unknown",
     count: result.vulnerabilities.length,
     errors: result.errors,
   }))
 
+  if (sessionId) {
+    addLog(sessionId, "system", "info", `Scan complete: ${allResults.length} scanners, ${vulnerabilities.length} vulnerabilities`)
+  }
+
   return { vulnerabilities, totalChecks, scannerResults: finalScannerResults }
 }
 
-// ─── Main Entry Point ────────────────────────────────────────────────────────
+// ─── 主入口 ────────────────────────────────────────────────────────────────
 
 export async function runCompositeScan(
   targetPath: string,
@@ -501,7 +327,9 @@ export async function runCompositeScan(
   sessionId?: string,
   engine: ScannerEngine = "ai",
 ): Promise<CompositeResult> {
-  const scanners = getAvailableScanners()
+  const allScanners = getAllScanners()
+  const availableScanners = getAvailableScanners()
+  const availableNames = availableScanners.map(s => s.name)
   const startTime = Date.now()
 
   function setProgress(
@@ -523,12 +351,10 @@ export async function runCompositeScan(
     })
   }
 
-  // Resolve relative path to absolute so all scanners find the target
+  // Resolve relative path to absolute
   targetPath = require("path").resolve(targetPath)
 
-  // ── Phase 0: Pre-scan target analysis ────────────────────────────────────
-  // 在 AI 调度前，先用工具扫描目标目录，收集真实的技术栈数据
-  // 这样 AI 就不再是靠路径字符串"猜"，而是基于实际证据做决策
+  // ── Phase 0: 目标分析 ────────────────────────────────────────────────
   let targetAnalysis: TargetAnalysis | null = null
   if (sessionId) {
     addLog(sessionId, "system", "info", `🔍 Analyzing target source code structure: ${targetPath}`)
@@ -538,7 +364,7 @@ export async function runCompositeScan(
     targetAnalysis = analyzeTarget(targetPath)
     const elapsed = Date.now() - analysisStart
 
-    if (sessionId) {
+    if (sessionId && targetAnalysis) {
       const langList = Object.entries(targetAnalysis.languages)
         .sort(([, a], [, b]) => b.count - a.count)
         .slice(0, 5)
@@ -549,139 +375,135 @@ export async function runCompositeScan(
         `Languages: ${langList || "none"} | Configs: ${targetAnalysis.configDetails.map(c => c.name).join(", ") || "none"} | ${elapsed}ms`)
     }
   } catch (err) {
-    // 分析失败不阻塞扫描，降级为无数据
     console.warn("[composite] Target analysis failed, proceeding without it:", err)
     if (sessionId) {
-      addLog(sessionId, "system", "warn", "⚠ Target analysis failed, AI will decide without pre-scan data")
+      addLog(sessionId, "system", "warn", "⚠ Target analysis failed")
     }
   }
 
-  // ── Phase 1: AI Orchestrator Planning (animated progress) ──
-  const orchestrationPhases =
-    engine === "ai"
-      ? [
-          "🤖 AI orchestrator: evaluating scanner match from analysis...",
-          "🤖 AI orchestrator: computing per-scanner evidence...",
-          "🤖 AI orchestrator: optimizing parallel schedule...",
-          "🤖 AI orchestrator: generating scan plan...",
-        ]
-      : [
-          "🤖 AI orchestrator: analyzing target for full coverage...",
-          "🤖 AI orchestrator: scanning technology indicators...",
-          "🤖 AI orchestrator: selecting all relevant scanners...",
-          "🤖 AI orchestrator: building parallel execution groups...",
-          "🤖 AI orchestrator: finalizing coverage plan...",
-        ]
-
-  setProgress(0, orchestrationPhases[0])
-
-  let phaseIndex = 0
-  const phaseTimer = setInterval(() => {
-    phaseIndex++
-    if (phaseIndex >= orchestrationPhases.length) {
-      // Stay at the last message once all phases shown — never wrap back to 0
-      return
+  // ── Phase 1: 规则选择扫描器 ─────────────────────────────────────────
+  if (!targetAnalysis) {
+    targetAnalysis = {
+      targetPath,
+      totalFiles: 0,
+      totalDirs: 0,
+      sizeCategory: "small",
+      languages: {},
+      configFiles: {},
+      configDetails: [],
+      hasIaC: false,
+      projectTypes: ["unknown"],
+      fileTreeSample: [],
+      hasPython: false,
+      hasSourceCode: true,
+      analysisTimeMs: 0,
     }
-    setProgress(Math.min(phaseIndex * 2, 8), orchestrationPhases[phaseIndex])
-  }, 1200)
+  }
+
+  const selectedScanners = selectScannersByRules(targetAnalysis, engine, availableNames)
 
   if (sessionId) {
-    addLog(sessionId, "system", "info", `Starting scan: ${engine} engine, ${mode} mode, target: ${targetPath}`)
+    addLog(sessionId, "system", "info",
+      `Rules selected ${selectedScanners.length} scanners: ${selectedScanners.join(", ")}`)
   }
 
+  const selectedScannerObjects = selectedScanners
+    .map(name => allScanners.find(s => s.name === name))
+    .filter((s): s is Scanner => s !== undefined)
+
+  const statuses = makeScannerStatuses(selectedScannerObjects)
+  setProgress(0, `📋 Rules matched: ${selectedScanners.length} scanners selected`, statuses)
+
+  // ── Phase 2: 执行扫描器 ─────────────────────────────────────────────
+  const result = await executeScanners(allScanners, selectedScanners, targetPath, sessionId)
+
+  // ── Phase 3: 完成 ────────────────────────────────────────────────────
+  setProgress(100, "✓ Scan complete. Generating report...",
+    result.scannerResults.map(r => ({
+      scannerName: r.scannerName,
+      displayName: r.displayName,
+      category: r.category,
+      count: r.count,
+      errors: r.errors,
+      status: (r.errors.length > 0 ? "failed" : "completed") as "failed" | "completed",
+    })),
+  )
+
+  // ── Phase 4: SBOM 生成 ───────────────────────────────────────────────
+  if (sessionId) {
+    try {
+      const sbomDir = join(process.cwd(), ".scans", "sbom")
+      if (!existsSync(sbomDir)) mkdirSync(sbomDir, { recursive: true })
+      const sbomFile = join(sbomDir, `${sessionId}.cdx.json`)
+
+      // 用 Trivy 生成 CycloneDX SBOM
+      const trivyPath = join(process.cwd(), "tools", "bin", "trivy.exe")
+      execSync(
+        `"${trivyPath}" fs --format cyclonedx --output "${sbomFile}" "${targetPath}"`,
+        { timeout: 120000, stdio: "pipe" },
+      )
+
+      if (existsSync(sbomFile)) {
+        addLog(sessionId, "system", "info", `📦 SBOM generated: ${sessionId}.cdx.json`)
+      }
+    } catch (err) {
+      addLog(sessionId, "system", "warn", `⚠ SBOM generation skipped: ${(err as Error).message}`)
+    }
+  }
+
+  // ── Phase 5: Webhook 通知 ────────────────────────────────────────────
+  const webhookUrl = process.env.WEBHOOK_URL
+  if (webhookUrl && sessionId) {
+    // 异步发送，不阻塞
+    notifyWebhook(webhookUrl, { sessionId, target: targetPath, engine, result }).catch(() => {})
+  }
+
+  return result
+}
+
+// ─── Webhook 通知 ─────────────────────────────────────────────────────────
+
+interface WebhookPayload {
+  sessionId: string
+  target: string
+  engine: ScannerEngine
+  result: CompositeResult
+}
+
+async function notifyWebhook(url: string, payload: WebhookPayload): Promise<void> {
   try {
-    const plan = await createOrchestratorPlan({
-      mode,
-      target: targetPath,
-      availableScannerNames: scanners.map(s => s.name),
-      engine,
-      targetAnalysis: targetAnalysis ?? {
-        targetPath,
-        totalFiles: 0,
-        totalDirs: 0,
-        sizeCategory: "small",
-        languages: {},
-        configFiles: {},
-        configDetails: [],
-        hasIaC: false,
-        projectTypes: ["unknown"],
-        fileTreeSample: [],
-        hasPython: false,
-        hasSourceCode: false,
-        analysisTimeMs: 0,
-      },
+    const { fetch } = await import("undici" as any) // Next.js polyfilled
+    await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        event: "scan.completed",
+        scanId: payload.sessionId,
+        target: payload.target,
+        engine: payload.engine,
+        timestamp: new Date().toISOString(),
+        summary: {
+          totalVulnerabilities: payload.result.vulnerabilities.length,
+          totalChecks: payload.result.totalChecks,
+          ...(() => {
+            const c = { critical: 0, high: 0, medium: 0, low: 0 }
+            for (const v of payload.result.vulnerabilities) {
+              if (c[v.severity.toLowerCase() as keyof typeof c] !== undefined) c[v.severity.toLowerCase() as keyof typeof c]++
+            }
+            return c
+          })(),
+        },
+        scanners: payload.result.scannerResults.map(s => ({
+          name: s.scannerName,
+          displayName: s.displayName,
+          category: s.category,
+          findings: s.count,
+          errors: s.errors.length > 0 ? s.errors : undefined,
+        })),
+      }),
+      signal: AbortSignal.timeout(10000),
     })
-    clearInterval(phaseTimer)
-
-    // ── Phase 2: Plan Ready ──
-    if (sessionId) {
-      addLog(sessionId, "orchestrator", "info",
-        `AI plan generated: ${plan.selectedScanners.length} scanners selected (${plan.scanPriority} priority)`,
-        `Groups: ${plan.parallelGroups.map(g => g.join(", ")).join(" | ")}`)
-    }
-    const planScanners = plan.selectedScanners
-      .map(name => scanners.find(s => s.name === name))
-      .filter((s): s is Scanner => s !== undefined)
-
-    const priorityLabel = { speed: "fast", depth: "deep", balanced: "balanced" }[plan.scanPriority] || plan.scanPriority
-    const reviewLabel = plan.aiReview ? " + AI code review" : ""
-    const planMsg = `✓ AI plan: ${plan.selectedScanners.length} scanners (${priorityLabel} priority${reviewLabel})`
-
-    setProgress(3, planMsg, planScanners.map(s => ({
-      scannerName: s.name,
-      displayName: s.displayName,
-      category: s.category,
-      count: 0,
-      errors: [] as string[],
-      status: "pending" as const,
-    })))
-
-    if (sessionId) {
-      updateSession(sessionId, { orchestratorPlan: plan as any })
-    }
-
-    // ── Phase 3: Execute Scanners ──
-    const result = await executeScannersByPlan(scanners, plan, targetPath, mode, sessionId)
-
-    // ── Phase 4: Complete ──
-    setProgress(100, "✓ Scan complete. Generating report...",
-      result.scannerResults.map(r => ({
-        scannerName: r.scannerName,
-        displayName: r.displayName,
-        category: r.category,
-        count: r.count,
-        errors: r.errors,
-        status: (r.errors.length > 0 ? "failed" : "completed") as "failed" | "completed",
-      })),
-    )
-
-    if (sessionId) {
-      addLog(sessionId, "system", "info", `AI scan complete: ${result.scannerResults.length} scanners finished`,
-        `Total: ${result.vulnerabilities.length} vulnerabilities found across ${result.totalChecks} checks`)
-    }
-
-    return result
-  } catch (err) {
-    clearInterval(phaseTimer)
-    const msg = err instanceof Error ? err.message : String(err)
-    console.warn("[composite] Orchestrator failed, falling back:", msg)
-
-    setProgress(0, `⚠️ AI orchestrator unavailable (${msg}) — using direct scanner selection`)
-
-    // Store the fallback reason in the session for visibility in the report
-    if (sessionId) {
-      updateSession(sessionId, { error: `Orchestrator fallback: ${msg}` })
-      addLog(sessionId, "orchestrator", "error", `AI orchestrator unavailable`,
-        `Reason: ${msg}. Falling back to direct scanner selection.`)
-    }
-
-    const fallbackResult = await runFallbackScan(scanners, targetPath, mode, sessionId)
-
-    if (sessionId) {
-      addLog(sessionId, "system", "info", `Fallback scan complete: ${fallbackResult.scannerResults.length} scanners finished`,
-        `Total: ${fallbackResult.vulnerabilities.length} vulnerabilities found`)
-    }
-
-    return fallbackResult
+  } catch {
+    // Webhook 失败不阻塞扫描
   }
 }

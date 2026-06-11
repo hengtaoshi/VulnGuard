@@ -4,7 +4,7 @@ export const zh = {
     beta: "测试版",
   },
   nav: {
-    dashboard: "仪表盘",
+    dashboard: "安全中心",
     newScan: "新建扫描",
     scanHistory: "扫描历史",
     reports: "安全报告",

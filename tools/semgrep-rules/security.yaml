@@ -725,7 +725,7 @@ rules:
     metadata:
       cwe: "CWE-693"
       category: "security-misconfig"
-    # This is a negative check — semgrep patterns match code that exists,
+    # This is a negative check - semgrep patterns match code that exists,
     # so this rule won't trigger unless helmet() is used.
     # For detecting its ABSENCE, we'd need a different approach.
     # Keeping this as a reference for project-level scanning.

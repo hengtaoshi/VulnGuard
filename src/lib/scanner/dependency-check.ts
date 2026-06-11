@@ -35,7 +35,13 @@ interface DcReport {
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
 function resolveDcPath(): string | null {
-  // Check bundled location first (tools/bin/)
+  // Check extracted install first (tools/dependency-check/bin/)
+  const { join } = require("path") as typeof import("path")
+  const { existsSync } = require("fs") as typeof import("fs")
+  const dcDir = join(process.cwd(), "tools", "dependency-check", "bin", "dependency-check.bat")
+  if (existsSync(dcDir)) return dcDir
+
+  // Check bundled location (tools/bin/)
   if (existsSync(DC_BAT)) return DC_BAT
   if (existsSync(DC_SH)) return DC_SH
 
@@ -94,7 +100,8 @@ export async function runDependencyCheckScan(targetPath: string): Promise<ScanRe
   }
 
   try {
-    const cmd = `"${dcPath}" --scan "${targetPath}" --format JSON --out "${DC_OUTPUT_DIR}" --project VulnGuard --disableCentralCache --noupdate`
+    const cmd = `"${dcPath}" --scan "${targetPath.replace(/\\/g, "/")}" --format JSON --out "${DC_OUTPUT_DIR}" --project VulnGuard --nvdApiKey 8c0e67ee-a5dd-4e10-b589-995164a8bf30`
+    const env = { ...process.env, JAVA_OPTS: process.env.JAVA_OPTS || "-Dhttp.proxyHost=127.0.0.1 -Dhttp.proxyPort=7897 -Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=7897" }
     await execAsync(cmd, {
       timeout: 300000, // 5 min (first run downloads DB)
       maxBuffer: 50 * 1024 * 1024,

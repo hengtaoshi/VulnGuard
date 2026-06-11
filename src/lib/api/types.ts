@@ -35,6 +35,8 @@ export interface Vulnerability {
   description: string
   recommendation: string
   code?: string
+  /** AI 生成的修复代码示例 */
+  codeFix?: string
   source?: string
 }
 

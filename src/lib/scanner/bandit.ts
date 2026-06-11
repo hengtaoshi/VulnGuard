@@ -74,7 +74,7 @@ export async function runBanditScan(targetPath: string): Promise<ScanResult> {
 
   try {
     const { stdout } = await execAsync(
-      `bandit -r "${targetPath}" -f json --quiet`,
+      `bandit -r "${targetPath.replace(/\\/g, "/")}" -f json --quiet`,
       { timeout: 120000, maxBuffer: 10 * 1024 * 1024 },
     )
 

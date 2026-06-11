@@ -7,6 +7,7 @@ import { ChevronDown, Loader2, AlertCircle, Sparkles, Brain, AlertTriangle, Chec
 import { useI18n } from "@/lib/i18n/context"
 import { useLLMAnalysis } from "@/lib/api/hooks"
 import { DownloadPdfButton } from "@/components/report/DownloadPdfButton"
+import { convertToSarif, getSarifFilename } from "@/lib/sarif-converter"
 import type { AggregationSummary } from "@/lib/api/types"
 import type { ScanDetail, ScanProgress } from "@/lib/api/types"
 
@@ -981,6 +982,12 @@ const SeveritySection = ({ severity, vulnerabilities }: { severity: string; vuln
                     <pre className="bg-black/40 rounded-lg p-3 overflow-x-auto text-sm"><code className="text-xs">{vuln.code}</code></pre>
                   </div>
                 )}
+                {vuln.codeFix && (
+                  <div>
+                    <h4 className="text-[10px] font-medium text-emerald-500 uppercase tracking-wider mb-1">修复代码</h4>
+                    <pre className="bg-emerald-500/5 border border-emerald-500/20 rounded-lg p-3 overflow-x-auto text-sm"><code className="text-xs">{vuln.codeFix}</code></pre>
+                  </div>
+                )}
               </div>
             </details>
           ))}
@@ -1206,6 +1213,60 @@ function AIDeepAnalysis({ scan }: { scan: ScanDetail }) {
   )
 }
 
+// ─── SARIF Download Button ──────────────────────────────────────────────────────
+
+function SarifDownloadButton({ scan }: { scan: ScanDetail }) {
+  const [state, setState] = useState<"idle" | "loading" | "error">("idle")
+
+  const handleDownload = async () => {
+    if (state === "loading") return
+    setState("loading")
+
+    try {
+      const sarifJson = convertToSarif(scan)
+      const blob = new Blob([sarifJson], { type: "application/json" })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = getSarifFilename(scan.id)
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      setState("idle")
+    } catch (err) {
+      console.error("SARIF export failed:", err)
+      setState("error")
+      setTimeout(() => setState("idle"), 4000)
+    }
+  }
+
+  return (
+    <div className="relative">
+      <button
+        onClick={handleDownload}
+        disabled={state === "loading"}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full hover:bg-accent transition-colors disabled:opacity-50"
+        title="导出 SARIF 格式（GitHub/VSCode 兼容）"
+      >
+        {state === "loading" ? (
+          <Loader2 className="h-3 w-3 animate-spin" />
+        ) : (
+          <FileDown className="h-3 w-3" />
+        )}
+        {state === "loading" ? "..." : "SARIF"}
+      </button>
+
+      {state === "error" && (
+        <div className="absolute top-full right-0 mt-2 z-50 flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/20 text-destructive text-xs rounded-lg shadow-lg whitespace-nowrap">
+          <AlertCircle className="h-3 w-3 shrink-0" />
+          <span>导出失败，请稍后重试</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Main Report Template ───────────────────────────────────────────────────────
 
 function SecurityReport({ scan }: { scan: ScanDetail }) {
@@ -1242,6 +1303,8 @@ function SecurityReport({ scan }: { scan: ScanDetail }) {
               {s.label}
             </a>
           ))}
+          {/* Download SARIF */}
+          <SarifDownloadButton scan={scan} />
           {/* Download PDF */}
           <DownloadPdfButton scanId={scan.id} />
           {/* Print */}
@@ -1352,7 +1415,7 @@ export default function ScanDetailPage({ params }: { params: { id: string } }) {
   const [scan, setScan] = useState<ScanDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const sseRef = useRef<EventSource | null>(null)
 
   useEffect(() => {
     const id = params.id
@@ -1361,28 +1424,66 @@ export default function ScanDetailPage({ params }: { params: { id: string } }) {
     setLoading(true)
     setError("")
 
-    const fetchScan = () => {
-      fetch(`/api/scans/${id}`)
-        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() as Promise<ScanDetail> })
-        .then(data => {
+    // 优先使用 SSE 实时推送，降级到轮询
+    let fallbackTimer: ReturnType<typeof setInterval> | null = null
+
+    function startSSE() {
+      const es = new EventSource(`/api/scan-progress/${id}`)
+      sseRef.current = es
+
+      es.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data) as ScanDetail
           setScan(data)
           setLoading(false)
           if (data.status === "completed" || data.status === "failed") {
-            if (timerRef.current) clearInterval(timerRef.current)
-            timerRef.current = null
+            es.close()
+            sseRef.current = null
           }
-        })
-        .catch(err => {
-          if (!loading) return
-          setError(err.message)
-          setLoading(false)
-        })
+        } catch { /* ignore parse errors */ }
+      }
+
+      es.addEventListener("done", () => {
+        es.close()
+        sseRef.current = null
+      })
+
+      es.addEventListener("error", () => {
+        es.close()
+        sseRef.current = null
+        // SSE 不可用，降级到轮询
+        if (!fallbackTimer) {
+          const poll = () => {
+            fetch(`/api/scans/${id}`)
+              .then(r => r.json() as Promise<ScanDetail>)
+              .then(data => {
+                setScan(data)
+                setLoading(false)
+                if (data.status === "completed" || data.status === "failed") {
+                  if (fallbackTimer) clearInterval(fallbackTimer)
+                  fallbackTimer = null
+                }
+              })
+              .catch(() => {})
+          }
+          poll()
+          fallbackTimer = setInterval(poll, POLL_INTERVAL)
+        }
+      })
     }
 
-    fetchScan()
-    timerRef.current = setInterval(fetchScan, POLL_INTERVAL)
+    startSSE()
 
-    return () => { if (timerRef.current) clearInterval(timerRef.current) }
+    return () => {
+      if (sseRef.current) {
+        sseRef.current.close()
+        sseRef.current = null
+      }
+      if (fallbackTimer) {
+        clearInterval(fallbackTimer)
+        fallbackTimer = null
+      }
+    }
   }, [params.id])
 
   const isInProgress = !scan || scan.status === "pending" || scan.status === "scanning"

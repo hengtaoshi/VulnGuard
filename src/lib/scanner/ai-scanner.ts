@@ -34,6 +34,8 @@ interface AIVulnerability {
   description: string
   recommendation: string
   code?: string
+  /** AI 生成的修复代码示例 */
+  codeFix?: string
 }
 
 interface AIScanResponse {
@@ -213,7 +215,7 @@ async function callDeepSeek(
   const languageHint = scanMode === "url" ? "HTML/JavaScript" : "multiple languages"
 
   const systemPrompt =
-    "You are a professional security code auditor. Analyze the provided code for security vulnerabilities.\n" +
+    "You are a senior security code auditor specializing in **deep logic analysis** that traditional scanners miss.\n" +
     "\n" +
     "IMPORTANT: All textual output must be in Chinese (中文). Vulnerability names, descriptions, recommendations, " +
     "and analysis_summary must be written in Chinese. CVE IDs, file paths, and code snippets should keep original format.\n" +
@@ -228,30 +230,37 @@ async function callDeepSeek(
     '      "cwe": "CWE-ID or N/A",\n' +
     '      "description": "漏洞详细描述（中文）",\n' +
     '      "recommendation": "修复建议（中文）",\n' +
-    '      "code": "The vulnerable code snippet (optional)"\n' +
+    '      "code": "存在漏洞的代码片段（可选）",\n' +
+    '      "codeFix": "修复后的代码（必须提供，至少一条漏洞）"\n' +
     "    }\n" +
     '  ],\n' +
     '  "analysis_summary": "简要分析总结（中文）"\n' +
     "}\n" +
     "\n" +
-    "重点关注以下类型漏洞:\n" +
-    "1. SQL/NoSQL 注入\n" +
-    "2. 跨站脚本攻击 (XSS)\n" +
-    "3. 命令/代码注入\n" +
-    "4. 路径遍历\n" +
-    "5. 不安全的认证/授权\n" +
-    "6. 敏感数据泄露\n" +
-    "7. 安全配置错误\n" +
-    "8. 越权访问\n" +
-    "9. 不安全的反序列化\n" +
-    "10. 使用已知漏洞组件\n" +
-    "11. 日志与监控不足\n" +
-    "12. 服务端请求伪造 (SSRF)\n" +
-    "13. 不安全的加密\n" +
-    "14. 原型链污染\n" +
-    "15. 开放重定向\n" +
+    "## ⛔ 不要报告以下类型（规则引擎已覆盖）\n" +
+    "- SQL/NoSQL 注入（semgrep 已覆盖）\n" +
+    "- XSS / 跨站脚本（semgrep 已覆盖）\n" +
+    "- 命令/代码注入（semgrep 已覆盖）\n" +
+    "- 路径遍历（semgrep 已覆盖）\n" +
+    "- 硬编码凭据/密钥（gitleaks 已覆盖）\n" +
+    "- 已知 CVE 依赖漏洞（npm-audit / pip-audit / trivy 已覆盖）\n" +
+    "- 不安全的反序列化（semgrep 已覆盖）\n" +
+    "- SSRF / 开放重定向（semgrep 已覆盖）\n" +
     "\n" +
-    "准确且全面，只报告真实漏洞，不要误报。"
+    "## ✅ 专注于规则引擎查不出的深层问题\n" +
+    "1. **业务逻辑漏洞**：绕过支付、越权操作、提权、条件竞争\n" +
+    "2. **权限绕过**：缺失权限校验、水平/垂直越权\n" +
+    "3. **跨文件复合漏洞**：单独看每个函数都安全，组合起来有风险\n" +
+    "4. **认证/授权逻辑缺陷**：session 管理、token 验证、密码重置流程\n" +
+    "5. **数据验证链缺失**：前端校验后端没做、类型转换引入风险\n" +
+    "6. **错误处理不当**：信息泄露、降级不安全模式\n" +
+    "7. **架构设计缺陷**：信任边界模糊、权限模型错误\n" +
+    "8. **误报分析**：如果发现某个告警实际不可利用，在报告中说明原因\n" +
+    "\n" +
+    "## 输出要求\n" +
+    "- 宁缺毋滥：只报告经过推理确认的真实问题，不要凑数\n" +
+    "- recommendation 必须包含具体的代码修改示例（false positive 分析除外）\n" +
+    "- 如果某个问题被多个扫描器检出且你认为不可利用，在 analysis_summary 中说明"
 
   const userPrompt =
     "Target: " + targetName + "\n" +
@@ -365,6 +374,7 @@ export async function runAIScan(targetPath: string, mode?: "url" | "source"): Pr
         description: v.description,
         recommendation: v.recommendation,
         code: v.code || undefined,
+        codeFix: v.codeFix || undefined,
         source: "ai-scanner" as const,
       }
     })

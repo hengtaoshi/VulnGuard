@@ -384,8 +384,8 @@ function engineOptions(
   return [
     {
       value: "ai",
-      label: "AI 自主调度",
-      desc: "DeepSeek AI 根据目标智能选择最优扫描引擎组合",
+      label: "AI 智能扫描",
+      desc: "DeepSeek AI 对源码进行智能安全审计，分析潜在漏洞",
       icon: <Brain className="h-6 w-6 text-violet-500" />,
     },
     {
