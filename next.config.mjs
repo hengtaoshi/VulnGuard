@@ -3,6 +3,11 @@ const nextConfig = {
   output: 'standalone',
   poweredByHeader: false,
   images: { remotePatterns: [] },
+  modularizeImports: {
+    "lucide-react": {
+      transform: "lucide-react/dist/esm/icons/{{ kebabCase member }}",
+    },
+  },
 
   async headers() {
     return [

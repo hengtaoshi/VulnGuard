@@ -18,14 +18,13 @@ const { execSync } = require("child_process")
 const { existsSync, mkdirSync, createWriteStream, unlinkSync, readFileSync } = require("fs")
 const { join } = require("path")
 const https = require("https")
-const http = require("http")
 const crypto = require("crypto")
 const { platform, arch } = require("os")
 
 const IS_WIN = platform() === "win32"
 const BIN_DIR = join(__dirname, "..", "tools", "bin")
 const TOOLS_DIR = join(__dirname, "..", "tools")
-const PROXY = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || ""
+const PROXY = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || "http://127.0.0.1:7897"
 
 const COLORS = {
   reset: "\x1b[0m",
@@ -107,26 +106,14 @@ function fetchUrl(url) {
   })
 }
 
-function download(url, dest) {
-  return new Promise((resolve, reject) => {
-    const file = createWriteStream(dest)
-    const agent = PROXY ? new http.Agent({ host: new URL(PROXY).hostname, port: parseInt(new URL(PROXY).port) }) : undefined
-
-    https.get(url, { agent }, (res) => {
-      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        file.close()
-        download(res.headers.location, dest).then(resolve).catch(reject)
-        return
-      }
-      if (res.statusCode !== 200) {
-        file.close()
-        reject(new Error(`HTTP ${res.statusCode}`))
-        return
-      }
-      res.pipe(file)
-      file.on("finish", () => { file.close(); resolve() })
-    }).on("error", (err) => { file.close(); reject(err) })
-  })
+async function download(url, dest) {
+  const response = await fetch(url, { signal: AbortSignal.timeout(120000) })
+  if (response.status >= 300 && response.status < 400 && response.headers.get("location")) {
+    return download(response.headers.get("location"), dest)
+  }
+  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+  const buffer = Buffer.from(await response.arrayBuffer())
+  require("fs").writeFileSync(dest, buffer)
 }
 
 function createReadStream(path) {
