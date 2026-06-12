@@ -188,17 +188,17 @@ export function analyzeTarget(targetPath: string): TargetAnalysis {
         totalDirs++
         walk(fullPath, depth + 1)
       } else {
-        totalFiles++
         const ext = extname(entry).toLowerCase()
 
-        // 目录树样本
+        // 目录树样本（所有文件）
         if (fileTree.length < 50) {
           fileTree.push(relative(targetPath, fullPath).replace(/\\/g, "/"))
         }
 
-        // —— 语言统计 ——
+        // —— 语言统计（只统计可识别的源码文件） ——
         const lang = EXTENSION_LANGUAGE_MAP[ext]
         if (lang) {
+          totalFiles++
           // 递增计数器（真实数量）
           languageCounters[lang] = (languageCounters[lang] || 0) + 1
 
