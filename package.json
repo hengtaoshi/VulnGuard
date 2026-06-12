@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "release": "node scripts/build-release.js",
     "start": "next start",
     "setup": "node scripts/install-scanners.js",
     "lint": "next lint",

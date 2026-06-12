@@ -318,6 +318,22 @@ async function main() {
     }
   }
 
+  // ── CodeQL query packs ─────────────────────────────────────────────────
+  const codeqlPackDir = join(homedir(), ".codeql", "packages")
+  if (existsSync(codeqlBin) && !existsSync(join(codeqlPackDir, "codeql", "javascript-queries"))) {
+    log("CodeQL packs", "downloading query packs (~100 MB)...")
+    for (const pack of ["codeql/javascript-queries", "codeql/python-queries", "codeql/java-queries", "codeql/go-queries", "codeql/cpp-queries", "codeql/csharp-queries", "codeql/swift-queries", "codeql/ruby-queries"]) {
+      try {
+        execSync(`"${codeqlBin}" pack download ${pack}`, { timeout: 120000, stdio: "pipe" })
+      } catch {
+        warn(`CodeQL: failed to download ${pack} — will use --download at scan time`)
+      }
+    }
+    if (existsSync(join(codeqlPackDir, "codeql", "javascript-queries"))) {
+      log("CodeQL packs", "downloaded")
+    }
+  }
+
   // ── 4. Dependency-Check ─────────────────────────────────────────────────
   console.log(`\n  ${COLORS.cyan}[4/6]${COLORS.reset} Dependency-Check → tools/dependency-check/\n`)
   const dcDir = join(TOOLS_DIR, "dependency-check", "bin")
@@ -361,8 +377,21 @@ async function main() {
     }
   }
 
-  // ── 5. Semgrep rules update ─────────────────────────────────────────────
-  console.log(`\n  ${COLORS.cyan}[5/6]${COLORS.reset} Semgrep rules update\n`)
+  // ── 5/7. NVD Database for Dependency-Check ──────────────────────────────
+  console.log(`\n  ${COLORS.cyan}[5/7]${COLORS.reset} NVD Database → .nvd-cache/data/\n`)
+  if (existsSync(dcBat) || existsSync(dcSh)) {
+    log("NVD Database", "downloading (first run may take 10-20 minutes)...")
+    try {
+      const nvdScript = join(__dirname, "..", "download-nvd.bat")
+      execSync(`"${nvdScript}"`, { timeout: 1200000, stdio: "pipe" })
+      log("NVD Database", "ready")
+    } catch (err) {
+      fail("NVD Database", `download failed: ${err.message}`)
+    }
+  }
+
+  // ── 6/7. Semgrep rules update ───────────────────────────────────────────
+  console.log(`\n  ${COLORS.cyan}[6/7]${COLORS.reset} Semgrep rules update\n`)
   const rulesDir = join(TOOLS_DIR, "semgrep-rules")
   const rulesFile = join(rulesDir, "security.yaml")
 
@@ -431,7 +460,7 @@ async function main() {
   // ── Summary ──────────────────────────────────────────────────────────
   console.log(`\n  ${COLORS.cyan}══════════════════════════════════════════════${COLORS.reset}`)
   console.log(`  ${COLORS.green}  Setup complete!${COLORS.reset}`)
-  console.log(`  ${COLORS.dim}  6/6 steps finished${COLORS.reset}`)
+  console.log(`  ${COLORS.dim}  7/7 steps finished${COLORS.reset}`)
   console.log(`  ${COLORS.dim}  Start: npm run dev${COLORS.reset}`)
   console.log(`  ${COLORS.dim}  Visit: http://localhost:3000${COLORS.reset}`)
   console.log(`  ${COLORS.cyan}══════════════════════════════════════════════${COLORS.reset}\n`)

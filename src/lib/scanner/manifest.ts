@@ -205,16 +205,4 @@ export const SCANNER_MANIFEST: ScannerManifestEntry[] = [
     techIndicators: [".js", ".ts", ".jsx", ".tsx", ".py", ".java", ".go", ".cs", ".c", ".cpp", ".swift", ".rb", ".kt"],
     limitations: "Requires CodeQL CLI binary (tools/bin/codeql/). First run downloads query packs. Large projects may require significant memory for database creation. Analysis is slower than pattern-based SAST tools.",
   },
-  {
-    name: "ai-scanner",
-    displayName: "AI Code Review",
-    category: "ai",
-    supportedModes: ["source"],
-    description: "DeepSeek-powered AI code review scanner. Analyzes source code using large language models to detect logic vulnerabilities, business logic flaws, authentication issues, and security misconfigurations that traditional pattern-based SAST tools may miss. Supports 20+ programming languages.",
-    scanTypes: ["Logic Vulnerabilities", "Business Logic Flaws", "Authentication Issues", "Authorization Bypass", "Insecure Cryptography", "Sensitive Data Exposure", "Input Validation", "Race Conditions", "Configuration Issues"],
-    typicalDuration: "medium",
-    priority: 1,
-    techIndicators: [".js", ".ts", ".py", ".java", ".go", ".rs", ".rb", ".php", ".cs", ".swift", ".kt", ".c", ".cpp", ".vue", ".svelte"],
-    limitations: "Requires DEEPSEEK_API_KEY environment variable. Analysis quality depends on model capability. Large projects are sampled (not every file analyzed). May produce false positives for complex business logic. Slower than pattern-based SAST for large codebases.",
-  },
 ]

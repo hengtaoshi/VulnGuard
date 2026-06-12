@@ -167,7 +167,7 @@ function ReportDetailWrapper({ scanId, onClose }) {
   return <ReportDetail scan={data} onClose={onClose} />
 }
 
-const ENGINE_LABELS = { ai: "AI 智能", all: "全量扫描" }
+const ENGINE_LABELS = { ai: "智能扫描", all: "全量扫描" }
 
 function ReportCard({ scan, isExpanded, onToggle }) {
   const router = useRouter()

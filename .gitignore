@@ -21,3 +21,18 @@ scan-test.json
 .reasonix/
 .superpowers/
 test-report.html
+
+# Dependency-Check NVD 缓存数据库（运行时下载生成）
+tools/dependency-check/data/
+.nvd-cache/
+vulnguard-v*/
+.scans/
+.dc-report/
+data/uploads/
+
+# Scanner binaries (downloaded by npm run setup)
+tools/bin/*.exe
+tools/bin/codeql/
+tools/dependency-check/
+tools/codeql-win64.zip
+tools/dependency-check.zip

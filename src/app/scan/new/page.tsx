@@ -221,7 +221,7 @@ export default function NewScanPage() {
       <Card>
         <CardHeader>
           <CardTitle>扫描引擎</CardTitle>
-          <CardDescription>选择使用传统扫描器、AI 扫描或同时使用</CardDescription>
+          <CardDescription>选择扫描策略，AI 在扫描完成后对结果进行聚合分析</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 gap-3">
@@ -359,8 +359,8 @@ export default function NewScanPage() {
 
             <p className="text-xs text-muted-foreground">
               {engine === "ai"
-                ? "AI 扫描将代码发送至 DeepSeek 进行智能安全审计，分析 OWASP Top 10 及更多漏洞。"
-                : "使用 Semgrep 引擎进行 OWASP Top 10 静态代码安全分析。支持 JavaScript, TypeScript, Python, Java, Go 等 30+ 语言。"}
+                ? "根据检测到的语言和框架自动选择扫描器，运行后由 AI 聚合去重并排序。"
+                : "运行全部可用扫描器进行全面检测，运行后由 AI 聚合去重并排序。"}
             </p>
           </CardContent>
         </Card>
@@ -417,14 +417,14 @@ function engineOptions(
   return [
     {
       value: "ai",
-      label: "AI 智能扫描",
-      desc: "DeepSeek AI 对源码进行智能安全审计，分析潜在漏洞",
+      label: "智能扫描",
+      desc: "根据目标语言自动选择最合适的扫描器组合，AI 聚合结果",
       icon: <Brain className="h-6 w-6 text-violet-500" />,
     },
     {
       value: "all",
-      label: "全量扫描（AI + 全部引擎）",
-      desc: "运行所有可用扫描器 + AI 深度代码审计",
+      label: "全量扫描",
+      desc: "运行所有可用扫描器进行全面检测，AI 聚合结果",
       icon: <Cpu className="h-6 w-6 text-emerald-500" />,
     },
   ]

@@ -20,7 +20,6 @@ import { runOsvScan } from "./osv-scanner"
 import { runDependencyCheckScan } from "./dependency-check"
 import { runCodeqlScan } from "./codeql-scanner"
 import { runTrivyImageScan } from "./trivy"
-import { runAiScan } from "./ai-scanner"
 
 const TOOLS_BIN = join(process.cwd(), "tools", "bin")
 
@@ -244,15 +243,6 @@ const scanners: Scanner[] = [
       }
     },
     scan: (targetPath: string) => runCodeqlScan(targetPath),
-  },
-  {
-    name: "ai-scanner",
-    displayName: "AI Code Review",
-    category: "ai",
-    isAvailable: () => {
-      return !!process.env.DEEPSEEK_API_KEY
-    },
-    scan: (targetPath: string) => runAiScan(targetPath),
   },
 ]
 

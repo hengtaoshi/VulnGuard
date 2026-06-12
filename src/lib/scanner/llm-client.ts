@@ -2,7 +2,7 @@
  * llm-client.ts — DeepSeek LLM API 共享客户端
  *
  * 封装 DeepSeek Chat Completions API 调用，供 orchestrator、ai-aggregator、
- * ai-scanner 等模块统一使用。复用现有的 DEEPSEEK_API_KEY 环境变量。
+ * 供 orchestrator、ai-aggregator 等模块统一使用。
  */
 
 const MODEL = process.env.DEEPSEEK_MODEL || "deepseek-v4-flash"
