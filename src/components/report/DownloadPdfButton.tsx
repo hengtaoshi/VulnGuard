@@ -18,7 +18,7 @@ export function DownloadPdfButton({ scanId, variant = "nav" }: Props) {
     setState("loading")
 
     try {
-      // Fetch full scan detail from API
+      // Fetch full scan detail from API (auth handled via cookie)
       const res = await fetch(`/api/scans/${scanId}`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data: ReportData = await res.json()

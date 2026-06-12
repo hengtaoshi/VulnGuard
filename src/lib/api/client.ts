@@ -2,8 +2,20 @@ import type { ScanSummary, ScanDetail, DashboardStats } from "./types"
 
 const BASE_URL = "/api"
 
-async function fetcher<T>(url: string): Promise<T> {
-  const res = await fetch(`${BASE_URL}${url}`)
+/**
+ * Auth is handled via HttpOnly `scan_auth_token` cookie set by middleware.ts.
+ * The browser automatically sends the cookie with same-origin API requests.
+ * No manual Authorization header needed on the client side.
+ */
+
+async function fetcher<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${BASE_URL}${url}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...init?.headers,
+    },
+  })
   if (!res.ok) throw new Error(`API error: ${res.status}`)
   return res.json()
 }
@@ -21,13 +33,10 @@ export function getStats() {
 }
 
 export async function createScan(data: { target?: string; url?: string; mode?: string }) {
-  const res = await fetch(`${BASE_URL}/scans`, {
+  return fetcher<{ id: string; status: string; target: string; type: string; engine: string }>("/scans", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   })
-  if (!res.ok) throw new Error(`API error: ${res.status}`)
-  return res.json()
 }
 
 export async function getLLMAnalysis(data: {
@@ -36,29 +45,22 @@ export async function getLLMAnalysis(data: {
   summary: { critical: number; high: number; medium: number; low: number; passed: number }
   vulnerabilities: { name: string; severity: string; location: string; description: string }[]
 }) {
-  const res = await fetch(`${BASE_URL}/llm/analyze`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  })
-  if (!res.ok) throw new Error(`LLM API error: ${res.status}`)
-  return res.json() as Promise<{
+  return fetcher<{
     riskAssessment: string
     priorityFixes: string[]
     architectureRisks: string[]
     complianceNotes: string[]
     overallAdvice: string
-  }>
+  }>("/llm/analyze", {
+    method: "POST",
+    body: JSON.stringify(data),
+  })
 }
 
 export async function deleteScan(id: string) {
-  const res = await fetch(`${BASE_URL}/scans/${id}`, { method: "DELETE" })
-  if (!res.ok) throw new Error(`API error: ${res.status}`)
-  return res.json()
+  return fetcher<{ success: boolean }>(`/scans/${id}`, { method: "DELETE" })
 }
 
 export async function clearScans() {
-  const res = await fetch(`${BASE_URL}/scans`, { method: "DELETE" })
-  if (!res.ok) throw new Error(`API error: ${res.status}`)
-  return res.json()
+  return fetcher<{ success: boolean }>("/scans", { method: "DELETE" })
 }

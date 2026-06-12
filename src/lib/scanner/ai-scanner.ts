@@ -1,398 +1,287 @@
-import { readFileSync, readdirSync, statSync, existsSync } from "fs"
-import { join, relative, extname } from "path"
+/**
+ * ai-scanner.ts — DeepSeek AI 代码审查扫描器
+ *
+ * 读取源码文件，调用 DeepSeek 大模型进行安全分析。
+ * 能发现传统模式匹配 SAST 工具难以识别的逻辑漏洞、
+ * 业务逻辑缺陷、权限问题等。
+ *
+ * 实现 Scanner 接口，注册到 registry.ts。
+ */
+
+import { readFileSync, readdirSync, statSync } from "fs"
+import { join, extname, relative } from "path"
 import type { Vulnerability } from "@/lib/api/types"
 import type { ScanResult } from "./types"
+import { isLlmAvailable, callLlmJson } from "./llm-client"
 
-const SOURCE_EXTENSIONS = new Set([
+// ─── 支持分析的文件类型 ───────────────────────────────────────────────────
+
+const SUPPORTED_EXTS = new Set([
   ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
   ".py", ".java", ".go", ".rs", ".rb", ".php",
-  ".cs", ".swift", ".kt", ".scala", ".vue", ".svelte",
-  ".yaml", ".yml", ".json", ".xml", ".html", ".css",
-  ".sql", ".graphql", ".proto", ".dockerfile",
+  ".cs", ".kt", ".swift", ".scala",
+  ".c", ".h", ".cpp", ".hpp", ".cc", ".cxx",
+  ".vue", ".svelte",
 ])
 
 const SKIP_DIRS = new Set([
-  "node_modules", ".git", ".next", ".nuxt", "dist", "build",
-  ".cache", "__pycache__", "venv", ".venv", "env", ".env",
-  "coverage", ".scans", ".trivy-cache", ".claude", "target",
-  ".serverless", ".terraform", ".pytest_cache", "vendor",
+  "node_modules", ".git", ".svn", ".hg", ".next", ".nuxt",
+  "dist", "build", "target", "out", "coverage",
+  "__pycache__", ".pytest_cache", ".mypy_cache", ".venv", "venv",
+  ".trivy-cache", ".scans", ".dc-report", ".terraform",
+  ".cache", ".vscode", ".idea", "tools/bin", "data/uploads",
+  "vendor", ".vendor",
 ])
 
-const MAX_CODE_CHARS = 80000
-const MAX_FILE_CHARS = 15000
+// ─── 扫描策略 ─────────────────────────────────────────────────────────────
 
-export const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || "deepseek-v4-flash"
-export const DEEPSEEK_API_URL = process.env.DEEPSEEK_BASE_URL
-  ? process.env.DEEPSEEK_BASE_URL + "/v1/chat/completions"
-  : "https://api.deepseek.com/v1/chat/completions"
-
-interface AIVulnerability {
-  name: string
-  severity: "Critical" | "High" | "Medium" | "Low"
-  location: string
-  cwe: string
-  description: string
-  recommendation: string
-  code?: string
-  /** AI 生成的修复代码示例 */
-  codeFix?: string
+interface ScanStrategy {
+  maxFiles: number          // 最多扫描的文件数
+  maxLinesPerFile: number   // 每个文件最多分析的行数
+  batchSize: number         // 每批发送给 AI 的文件数
+  maxTotalLines: number     // 所有文件总行数上限
 }
 
-interface AIScanResponse {
-  vulnerabilities: AIVulnerability[]
-  analysis_summary: string
+function getStrategy(totalFiles: number): ScanStrategy {
+  if (totalFiles <= 10) return { maxFiles: 10, maxLinesPerFile: 200, batchSize: 5, maxTotalLines: 2000 }
+  if (totalFiles <= 50) return { maxFiles: 20, maxLinesPerFile: 150, batchSize: 5, maxTotalLines: 3000 }
+  if (totalFiles <= 200) return { maxFiles: 30, maxLinesPerFile: 120, batchSize: 4, maxTotalLines: 3600 }
+  return { maxFiles: 40, maxLinesPerFile: 100, batchSize: 3, maxTotalLines: 4000 }
 }
 
-function collectSourceFiles(dirPath: string): { path: string; content: string }[] {
-  const files: { path: string; content: string }[] = []
-  let totalChars = 0
+// ─── 文件收集 ─────────────────────────────────────────────────────────────
 
-  function walk(dir: string) {
-    if (totalChars >= MAX_CODE_CHARS) return
+interface SourceFile {
+  path: string
+  relativePath: string
+  language: string
+  lines: number
+  content: string
+}
 
-    let entries: string[] = []
+function collectSourceFiles(targetPath: string, strategy: ScanStrategy): SourceFile[] {
+  const files: SourceFile[] = []
+
+  function walk(dir: string, depth: number = 0) {
+    if (depth > 8 || files.length >= strategy.maxFiles) return
+    let entries: string[]
     try {
       entries = readdirSync(dir)
     } catch {
       return
     }
-
     for (const entry of entries) {
-      if (totalChars >= MAX_CODE_CHARS) break
-
-      const fullPath = join(dir, entry)
-      let stats
+      if (files.length >= strategy.maxFiles) return
+      const full = join(dir, entry)
       try {
-        stats = statSync(fullPath)
-      } catch {
-        continue
-      }
-
-      if (stats.isDirectory()) {
-        if (!SKIP_DIRS.has(entry) && !entry.startsWith(".")) {
-          walk(fullPath)
-        }
-      } else if (stats.isFile() && stats.size > 0 && stats.size < 500000) {
-        const ext = extname(entry).toLowerCase()
-        if (SOURCE_EXTENSIONS.has(ext)) {
-          try {
-            let content: string
-            try {
-              content = readFileSync(fullPath, "utf-8")
-            } catch {
-              content = readFileSync(fullPath, "latin1")
-            }
-
-            const relPath = relative(dirPath, fullPath).replace(/\\/g, "/")
-            if (content.indexOf("\0") !== -1) return
-
-            const truncated = content.length > MAX_FILE_CHARS
-              ? content.slice(0, MAX_FILE_CHARS) + "\n// ... [truncated]"
-              : content
-
-            if (totalChars + truncated.length <= MAX_CODE_CHARS) {
-              files.push({ path: relPath, content: truncated })
-              totalChars += truncated.length
-            }
-          } catch {
-            // skip unreadable files
+        const stat = statSync(full)
+        if (stat.isDirectory()) {
+          if (!SKIP_DIRS.has(entry) && !entry.startsWith(".")) {
+            walk(full, depth + 1)
           }
+        } else {
+          const ext = extname(entry).toLowerCase()
+          if (!SUPPORTED_EXTS.has(ext)) continue
+          if (stat.size > 1024 * 1024) continue // 跳过 >1MB 的文件
+
+          const content = readFileSync(full, "utf-8").slice(0, strategy.maxLinesPerFile * 80)
+          const lines = content.split("\n").length
+
+          files.push({
+            path: full,
+            relativePath: relative(targetPath, full).replace(/\\/g, "/"),
+            language: extToLanguage(ext),
+            lines,
+            content,
+          })
         }
-      }
+      } catch { /* skip unreadable */ }
     }
   }
 
-  walk(dirPath)
-  return files
+  walk(targetPath)
+
+  // 按文件大小排序，优先分析小文件（更可能一次分析完）
+  files.sort((a, b) => a.content.length - b.content.length)
+
+  // 限制总行数
+  let totalLines = 0
+  const result: SourceFile[] = []
+  for (const f of files) {
+    if (totalLines + f.lines > strategy.maxTotalLines) break
+    result.push(f)
+    totalLines += f.lines
+  }
+
+  return result
 }
 
-async function fetchSinglePage(url: string): Promise<{ content: string; links: string[] }> {
-  const mod = url.startsWith("https") ? await import("https") : await import("http")
-
-  return new Promise<{ content: string; links: string[] }>((resolve, reject) => {
-    const req = mod.get(url, { timeout: 15000 }, (res) => {
-      const chunks: Buffer[] = []
-      res.on("data", (chunk: Buffer) => chunks.push(chunk))
-      res.on("end", () => {
-        const body = Buffer.concat(chunks).toString("utf-8")
-        const content = body.length > MAX_FILE_CHARS ? body.slice(0, MAX_FILE_CHARS) : body
-        const links: string[] = []
-        const linkRegex = /<a[^>]+href=["']([^"']+)["']/gi
-        let m: RegExpExecArray | null
-        while ((m = linkRegex.exec(body)) !== null) {
-          const href = m[1].split("#")[0].split("?")[0]
-          if (href && !href.startsWith("javascript:") && !href.startsWith("mailto:")) {
-            links.push(href)
-          }
-        }
-        resolve({ content, links })
-      })
-    })
-    req.on("error", (e: Error) => reject(e))
-    req.on("timeout", () => { req.destroy(); reject(new Error("timeout")) })
-  })
+function extToLanguage(ext: string): string {
+  const map: Record<string, string> = {
+    ".js": "JavaScript", ".jsx": "JavaScript (React)",
+    ".ts": "TypeScript", ".tsx": "TypeScript (React)",
+    ".mjs": "JavaScript", ".cjs": "JavaScript",
+    ".py": "Python", ".java": "Java", ".go": "Go",
+    ".rs": "Rust", ".rb": "Ruby", ".php": "PHP",
+    ".cs": "C#", ".kt": "Kotlin", ".swift": "Swift",
+    ".scala": "Scala",
+    ".c": "C", ".h": "C Header", ".cpp": "C++",
+    ".hpp": "C++ Header", ".cc": "C++", ".cxx": "C++",
+    ".vue": "Vue", ".svelte": "Svelte",
+  }
+  return map[ext] || "Unknown"
 }
 
-function resolveUrl(base: string, path: string): string | null {
-  try {
-    if (path.startsWith("http://") || path.startsWith("https://")) return path
-    const url = new URL(path, base)
-    return url.href
-  } catch {
-    return null
-  }
+// ─── AI 分析 ──────────────────────────────────────────────────────────────
+
+interface AiVulnResult {
+  vulnerabilities: Array<{
+    name: string
+    severity: "Critical" | "High" | "Medium" | "Low"
+    location: string
+    cve: string
+    description: string
+    recommendation: string
+    code?: string
+  }>
 }
 
-const MAX_CRAWL_PAGES = 20
+function buildSystemPrompt(): string {
+  return `你是一位资深安全代码审计专家。分析提供的源代码，找出安全漏洞。
 
-async function crawlSite(targetUrl: string): Promise<string> {
-  const visited = new Set<string>()
-  const pageContents: { url: string; content: string }[] = []
-  let totalChars = 0
+重点关注:
+1. **注入漏洞**: SQL注入、命令注入、XSS、模板注入、路径遍历
+2. **认证与授权**: 硬编码凭据、缺失权限校验、不安全的会话管理
+3. **敏感数据泄露**: 日志中打印密码/密钥、不安全的传输、内存中的数据残留
+4. **配置安全**: 危险的功能开启、默认凭据、不安全的CORS配置
+5. **加密问题**: 使用弱加密算法、自定义加密、密钥硬编码
+6. **逻辑漏洞**: 竞态条件、越权访问、业务逻辑绕过
+7. **依赖安全**: 使用了已知有漏洞的API或过时库
 
-  const parsedUrl = new URL(targetUrl)
-  const baseDomain = parsedUrl.hostname
-  const baseUrl = parsedUrl.origin
+输出规则:
+- 对每段代码，先判断是否有安全风险
+- 仅有真实安全隐患才报告，不要误报
+- 严重等级:
+  - Critical: 可直接被利用导致数据泄露或系统控制
+  - High: 有明确的利用路径
+  - Medium: 在特定条件下可利用
+  - Low: 安全编码最佳实践问题
 
-  const queue: string[] = [targetUrl]
-
-  while (queue.length > 0 && pageContents.length < MAX_CRAWL_PAGES && totalChars < MAX_CODE_CHARS) {
-    const url = queue.shift()!
-    if (visited.has(url)) continue
-    visited.add(url)
-
-    try {
-      const { content, links } = await fetchSinglePage(url)
-
-      if (content.trim().length > 100) {
-        pageContents.push({ url, content })
-        totalChars += content.length
-      }
-
-      for (const link of links) {
-        const resolved = resolveUrl(baseUrl, link)
-        if (resolved && resolved.startsWith(baseUrl) && !visited.has(resolved)) {
-          const parsed = new URL(resolved)
-          if (parsed.hostname === baseDomain) {
-            queue.push(resolved)
-          }
-        }
-      }
-    } catch {
-      // skip pages that fail to load
-    }
-  }
-
-  if (pageContents.length === 0) {
-    return "No pages could be fetched from " + targetUrl
-  }
-
-  let remainingChars = MAX_CODE_CHARS
-  const parts: string[] = []
-  for (const page of pageContents) {
-    if (remainingChars <= 0) break
-    const header = "=== " + page.url + " ===\n"
-    const available = Math.min(page.content.length, remainingChars - header.length - 10)
-    if (available > 0) {
-      parts.push(header + page.content.slice(0, available))
-      remainingChars -= header.length + available
-    }
-  }
-
-  return parts.join("\n\n")
+输出严格的 JSON 格式（不要 markdown 代码块）。`
 }
 
-async function callDeepSeek(
-  codeContext: string,
-  targetName: string,
-  scanMode: "url" | "source",
-): Promise<AIScanResponse> {
-  const apiKey = process.env.DEEPSEEK_API_KEY
-  if (!apiKey) {
-    throw new Error("DEEPSEEK_API_KEY not configured. Set the DEEPSEEK_API_KEY environment variable.")
-  }
+function buildUserPrompt(files: SourceFile[]): string {
+  const fileSections = files.map(f =>
+    `### ${f.relativePath} (${f.language}, ${f.lines}行)
+\`\`\`
+${f.content}
+\`\`\``
+  ).join("\n\n")
 
-  const languageHint = scanMode === "url" ? "HTML/JavaScript" : "multiple languages"
+  return `请分析以下源码文件，找出所有安全漏洞。
 
-  const systemPrompt =
-    "You are a senior security code auditor specializing in **deep logic analysis** that traditional scanners miss.\n" +
-    "\n" +
-    "IMPORTANT: All textual output must be in Chinese (中文). Vulnerability names, descriptions, recommendations, " +
-    "and analysis_summary must be written in Chinese. CVE IDs, file paths, and code snippets should keep original format.\n" +
-    "\n" +
-    "For each vulnerability found, return a JSON object with this exact structure (no markdown, no code blocks):\n" +
-    '{\n' +
-    '  "vulnerabilities": [\n' +
-    '    {\n' +
-    '      "name": "漏洞名称（中文）",\n' +
-    '      "severity": "Critical|High|Medium|Low",\n' +
-    '      "location": "file:line (or URL/path)",\n' +
-    '      "cwe": "CWE-ID or N/A",\n' +
-    '      "description": "漏洞详细描述（中文）",\n' +
-    '      "recommendation": "修复建议（中文）",\n' +
-    '      "code": "存在漏洞的代码片段（可选）",\n' +
-    '      "codeFix": "修复后的代码（必须提供，至少一条漏洞）"\n' +
-    "    }\n" +
-    '  ],\n' +
-    '  "analysis_summary": "简要分析总结（中文）"\n' +
-    "}\n" +
-    "\n" +
-    "## ⛔ 不要报告以下类型（规则引擎已覆盖）\n" +
-    "- SQL/NoSQL 注入（semgrep 已覆盖）\n" +
-    "- XSS / 跨站脚本（semgrep 已覆盖）\n" +
-    "- 命令/代码注入（semgrep 已覆盖）\n" +
-    "- 路径遍历（semgrep 已覆盖）\n" +
-    "- 硬编码凭据/密钥（gitleaks 已覆盖）\n" +
-    "- 已知 CVE 依赖漏洞（npm-audit / pip-audit / trivy 已覆盖）\n" +
-    "- 不安全的反序列化（semgrep 已覆盖）\n" +
-    "- SSRF / 开放重定向（semgrep 已覆盖）\n" +
-    "\n" +
-    "## ✅ 专注于规则引擎查不出的深层问题\n" +
-    "1. **业务逻辑漏洞**：绕过支付、越权操作、提权、条件竞争\n" +
-    "2. **权限绕过**：缺失权限校验、水平/垂直越权\n" +
-    "3. **跨文件复合漏洞**：单独看每个函数都安全，组合起来有风险\n" +
-    "4. **认证/授权逻辑缺陷**：session 管理、token 验证、密码重置流程\n" +
-    "5. **数据验证链缺失**：前端校验后端没做、类型转换引入风险\n" +
-    "6. **错误处理不当**：信息泄露、降级不安全模式\n" +
-    "7. **架构设计缺陷**：信任边界模糊、权限模型错误\n" +
-    "8. **误报分析**：如果发现某个告警实际不可利用，在报告中说明原因\n" +
-    "\n" +
-    "## 输出要求\n" +
-    "- 宁缺毋滥：只报告经过推理确认的真实问题，不要凑数\n" +
-    "- recommendation 必须包含具体的代码修改示例（false positive 分析除外）\n" +
-    "- 如果某个问题被多个扫描器检出且你认为不可利用，在 analysis_summary 中说明"
-
-  const userPrompt =
-    "Target: " + targetName + "\n" +
-    "Mode: " + scanMode + "\n" +
-    "Language: " + languageHint + "\n" +
-    "\n" +
-    "Code to analyze:\n" +
-    "```\n" +
-    codeContext + "\n" +
-    "```"
-
-  const res = await fetch(DEEPSEEK_API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": "Bearer " + apiKey,
-    },
-    body: JSON.stringify({
-      model: DEEPSEEK_MODEL,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      temperature: 0.2,
-      max_tokens: 4096,
-    }),
-  })
-
-  if (!res.ok) {
-    const errBody = await res.text().catch(() => "unknown")
-    throw new Error("DeepSeek API error " + res.status + ": " + errBody.slice(0, 200))
-  }
-
-  const json = await res.json()
-  const content = json.choices?.[0]?.message?.content || ""
-
-  try {
-    const cleaned = content
-      .replace(/```json\s*/gi, "")
-      .replace(/```\s*/g, "")
-      .trim()
-    const parsed = JSON.parse(cleaned)
-    return {
-      vulnerabilities: parsed.vulnerabilities || [],
-      analysis_summary: parsed.analysis_summary || "",
-    }
-  } catch {
-    return {
-      vulnerabilities: [],
-      analysis_summary: content.slice(0, 500),
-    }
-  }
+${fileSections}`
 }
 
-export async function runAIScan(targetPath: string, mode?: "url" | "source"): Promise<ScanResult> {
-  const actualMode = mode || (targetPath.startsWith("http://") || targetPath.startsWith("https://") ? "url" : "source")
+async function analyzeWithAi(files: SourceFile[]): Promise<Vulnerability[]> {
+  const result = await callLlmJson<AiVulnResult>(
+    buildSystemPrompt(),
+    buildUserPrompt(files),
+    { temperature: 0.1, maxTokens: 4096, timeoutMs: 90000 },
+  )
+
+  if (!result?.vulnerabilities) return []
+
+  return result.vulnerabilities.map((v, i) => ({
+    id: `AI-${i + 1}`,
+    name: v.name,
+    severity: v.severity,
+    location: v.location,
+    cve: v.cve || "AI-Finding",
+    description: v.description,
+    recommendation: v.recommendation,
+    code: v.code,
+    source: "ai-scanner",
+  }))
+}
+
+// ─── 主扫描函数 ──────────────────────────────────────────────────────────
+
+export async function runAiScan(targetPath: string): Promise<ScanResult> {
   const scannerName = "ai-scanner"
+  const errors: string[] = []
 
-  if (!process.env.DEEPSEEK_API_KEY) {
+  if (!isLlmAvailable()) {
     return {
       vulnerabilities: [],
       totalChecks: 0,
-      errors: ["AI scanner requires DEEPSEEK_API_KEY. Configure it in .env.local"],
+      errors: ["DeepSeek API key not configured. Set DEEPSEEK_API_KEY environment variable."],
       scannerName,
     }
   }
 
   try {
-    let codeContext: string
-    let targetName: string
-
-    if (actualMode === "url") {
-      targetName = targetPath
-      const crawledContent = await crawlSite(targetPath)
-      codeContext = "Target: " + targetPath + "\n\nPages analyzed (" + (crawledContent.includes("===") ? "multiple pages" : "single page") + "):\n" + crawledContent
-    } else {
-      targetName = targetPath
-      if (!existsSync(targetPath)) {
-        return {
-          vulnerabilities: [],
-          totalChecks: 0,
-          errors: ["Target path does not exist: " + targetPath],
-          scannerName,
+    // 1. 先做快速目标分析（文件数/大小），确定扫描策略
+    let totalCandidateFiles = 0
+    const countFiles = (dir: string, depth = 0) => {
+      if (depth > 5) return
+      try {
+        for (const entry of readdirSync(dir)) {
+          if (skipCheck(entry)) continue
+          const full = join(dir, entry)
+          const s = statSync(full)
+          if (s.isDirectory()) countFiles(full, depth + 1)
+          else if (SUPPORTED_EXTS.has(extname(entry).toLowerCase())) totalCandidateFiles++
         }
-      }
-
-      const files = collectSourceFiles(targetPath)
-      if (files.length === 0) {
-        return {
-          vulnerabilities: [],
-          totalChecks: 0,
-          errors: ["No source code files found in target directory"],
-          scannerName,
-        }
-      }
-
-      codeContext = files
-        .map(function(f) { return "--- " + f.path + " ---\n" + f.content })
-        .join("\n\n")
+      } catch { /* skip */ }
     }
+    countFiles(targetPath)
 
-    const result = await callDeepSeek(codeContext, targetName, actualMode)
+    const strategy = getStrategy(totalCandidateFiles)
 
-    const vulnerabilities: Vulnerability[] = result.vulnerabilities.map(function(v, idx) {
+    // 2. 收集源码文件
+    const files = collectSourceFiles(targetPath, strategy)
+
+    if (files.length === 0) {
       return {
-        id: "AI-" + (idx + 1),
-        name: v.name,
-        severity: v.severity,
-        location: v.location,
-        cve: v.cwe || "N/A",
-        description: v.description,
-        recommendation: v.recommendation,
-        code: v.code || undefined,
-        codeFix: v.codeFix || undefined,
-        source: "ai-scanner" as const,
+        vulnerabilities: [],
+        totalChecks: 0,
+        errors: ["AI scanner: No supported source files found in target"],
+        scannerName,
       }
-    })
-
-    const totalChecks = Math.max(vulnerabilities.length + 10, 10)
-
-    return {
-      vulnerabilities,
-      totalChecks,
-      errors: [],
-      scannerName,
     }
-  } catch (ex: unknown) {
+
+    // 3. 分批发送给 AI 分析
+    const allVulnerabilities: Vulnerability[] = []
+    for (let i = 0; i < files.length; i += strategy.batchSize) {
+      const batch = files.slice(i, i + strategy.batchSize)
+      const vulns = await analyzeWithAi(batch)
+      allVulnerabilities.push(...vulns)
+    }
+
+    // 4. 去重（AI 可能在不同文件中报告相似的漏洞）
+    const seen = new Map<string, Vulnerability>()
+    for (const v of allVulnerabilities) {
+      const key = `${v.name}:${v.location || "unknown"}`.toLowerCase()
+      if (!seen.has(key)) {
+        seen.set(key, v)
+      }
+    }
+
+    const vulnerabilities = Array.from(seen.values())
+    const totalChecks = Math.max(vulnerabilities.length, files.length)
+
+    return { vulnerabilities, totalChecks, errors, scannerName }
+  } catch (err) {
     return {
       vulnerabilities: [],
       totalChecks: 0,
-      errors: ["AI scan failed: " + String(ex instanceof Error ? ex.message : ex)],
+      errors: [`AI scanner failed: ${err instanceof Error ? err.message : String(err)}`],
       scannerName,
     }
   }
+}
+
+function skipCheck(name: string): boolean {
+  return SKIP_DIRS.has(name) || name.startsWith(".")
 }

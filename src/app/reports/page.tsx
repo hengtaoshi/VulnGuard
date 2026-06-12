@@ -74,7 +74,14 @@ function VulnerabilityCard({ vuln, index }) {
       {vuln.recommendation && <div className="flex items-start gap-2"><Lightbulb className="h-3.5 w-3.5 text-amber-500 mt-0.5 shrink-0" />
         <div><p className="text-xs font-medium text-muted-foreground mb-0.5">修复建议</p><p className="text-sm">{vuln.recommendation}</p></div></div>}
       {(vuln.cve || vuln.source) && <div className="flex items-start gap-2"><AlertCircle className="h-3.5 w-3.5 text-muted-foreground mt-0.5 shrink-0" />
-        <div className="flex gap-3 text-xs text-muted-foreground">{vuln.cve && vuln.cve !== "—" && <span>CVE: {vuln.cve}</span>}{vuln.source && <span>来源: {vuln.source}</span>}</div></div>}
+        <div className="flex gap-3 text-xs text-muted-foreground">
+          {vuln.cve && vuln.cve !== "—" && (
+            vuln.isRealCve
+              ? <a href={`https://nvd.nist.gov/vuln/detail/${vuln.cve}`} target="_blank" rel="noopener noreferrer" className="text-red-400 hover:text-red-300 underline underline-offset-2">CVE: {vuln.cve}</a>
+              : <span>CVE: {vuln.cve}</span>
+          )}
+          {vuln.source && <span>来源: {vuln.source}</span>}
+        </div></div>}
     </div>}
   </div>
 }

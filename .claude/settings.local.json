@@ -149,7 +149,12 @@
       "Bash(git remote *)",
       "Bash(git push *)",
       "Bash(git commit *)",
-      "Bash(git pull *)"
+      "Bash(git pull *)",
+      "Bash(git -C \"D:/DEMO/aut\" ls-files test-target/)",
+      "Bash(git *)",
+      "Bash(npm test *)",
+      "Bash(tasklist)",
+      "Bash(xargs wc -l)"
     ]
   }
 }

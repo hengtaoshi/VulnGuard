@@ -185,6 +185,7 @@ export interface ReportData {
     source?: string
     code?: string
   }>
+  projectName?: string
   scanners?: Array<{
     scannerName?: string
     displayName?: string
@@ -214,8 +215,16 @@ export function generateReportHtml(scan: ReportData): string {
   const tgt = scan.target || ""
   const id = scan.id || ""
 
-  // 提取项目名称用于 PDF 文件名
-  const projectName = tgt.split(/[/\\]/).filter(Boolean).pop() || "Unknown"
+  // 提取项目名称用于 PDF 文件名 — 优先使用上传时记录的项目名
+  const projectName = scan.projectName || tgt.split(/[/\\]/).filter(Boolean).pop() || "Unknown"
+  // 格式化时间戳：YYYY-MM-DD HHmm
+  const dateStr = scan.createdAt
+    ? (() => {
+        const d = new Date(scan.createdAt!)
+        const pad = (n: number) => String(n).padStart(2, "0")
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}${pad(d.getMinutes())}`
+      })()
+    : new Date().toISOString().slice(0, 16).replace("T", " ")
 
   let aiHtml = ""
   if (scan.aiAggregation) {
@@ -241,7 +250,7 @@ export function generateReportHtml(scan: ReportData): string {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>${projectName} VulnGuard 安全扫描报告</title>
+<title>${projectName} ${dateStr} VulnGuard 安全扫描报告</title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;background:#0a0e17;color:#e0e6f0;line-height:1.7;padding:40px 24px}

@@ -3,7 +3,8 @@
 import { useEffect, useState, useCallback, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { ChevronDown, Loader2, AlertCircle, Sparkles, Brain, AlertTriangle, CheckCircle2, Lightbulb, Shield, Search, Eye, Lock, Package, FileScan, Globe, FolderOpen, Clock, Target, Layers, GitBranch, Server, Zap, Wifi, Database, Cpu, Flag, TrendingUp, BarChart3, Download, Printer, Archive, Info, Upload, Activity } from "lucide-react"
+import { ChevronDown, Loader2, AlertCircle, Sparkles, Brain, AlertTriangle, CheckCircle2, Lightbulb, Shield, Search, Eye, Lock, Package, File, FileDown, FileScan, Globe, FolderOpen, Clock, Target, Layers, GitBranch, Server, Zap, Wifi, Database, Cpu, Flag, TrendingUp, BarChart3, Download, Printer, Archive, Info, Upload, Activity, ExternalLink } from "lucide-react"
+import { useParams } from "next/navigation"
 import { useI18n } from "@/lib/i18n/context"
 import { useLLMAnalysis } from "@/lib/api/hooks"
 import { DownloadPdfButton } from "@/components/report/DownloadPdfButton"
@@ -23,7 +24,6 @@ const scannerIcons: Record<string, React.ReactNode> = {
   "dependency-check": <Package className="h-3 w-3" />,
   trivy: <FileScan className="h-3 w-3" />,
 
-  "ai-scanner": <Brain className="h-3 w-3" />,
   bandit: <Shield className="h-3 w-3" />,
   checkov: <Server className="h-3 w-3" />,
   nuclei: <Zap className="h-3 w-3" />,
@@ -105,16 +105,7 @@ function riskScoreLabel(score: string): { label: string; color: string; desc: st
 
 // ─── Progress View (keeping as-is) ──────────────────────────────────────────────
 
-function AnimatedDots() {
-  const [dots, setDots] = useState(".")
-  useEffect(() => {
-    const t = setInterval(() => setDots(p => p.length >= 3 ? "." : p + "."), 500)
-    return () => clearInterval(t)
-  }, [])
-  return <span className="tabular-nums w-6 inline-block text-left">{dots}</span>
-}
-
-function ScanProgressView({ progress, engine }: { progress: ScanProgress | null; engine?: string }) {
+function ScanProgressView({ progress, engine, totalFiles, skippedFiles }: { progress: ScanProgress | null; engine?: string; totalFiles?: number; skippedFiles?: number }) {
   const percent = progress?.percent ?? 0
   const currentScanner = progress?.currentScanner ?? ""
   const scannerStatuses = progress?.scannerStatuses ?? []
@@ -137,133 +128,206 @@ function ScanProgressView({ progress, engine }: { progress: ScanProgress | null;
   const isComplete = percent >= 100 && !isAiAggregating && !isEscalating
   const isScanning = !isFallback && !isAiAggregating && !isEscalating && !isComplete && !isCrawling && !isOrchestrating && percent > 0 && percent < 100
 
-  // Rotating scanning tips — derived from elapsed time so no setInterval needed
-  const scanningMessages = [
-    "正在扫描目标网络与资产信息...",
-    "正在检测 Web 应用安全漏洞...",
-    "正在检查配置与权限安全性...",
-    "正在收集子域名与资产信息...",
-    "正在分析 HTTP 安全响应头...",
-    "正在检测常见攻击面...",
-    "正在进行深度安全探测...",
-    "正在交叉验证漏洞发现...",
-  ]
-  const scanMsgIdx = isScanning ? Math.floor(((displayElapsed || 0) / 3200) % scanningMessages.length) : 0
-
   const scannerRunning = scannerStatuses.filter(s => s.status === "running").length
   const scannerDone = scannerStatuses.filter(s => s.status === "completed" || s.status === "failed").length
   const scannerTotal = scannerStatuses.length
 
+  // Status icon helper
+  const StatusIcon = ({ status }: { status: string }) => {
+    switch (status) {
+      case "completed":
+        return <div className="h-5 w-5 rounded-full bg-emerald-500/20 flex items-center justify-center"><CheckCircle2 className="h-3 w-3 text-emerald-500" /></div>
+      case "failed":
+        return <div className="h-5 w-5 rounded-full bg-red-500/20 flex items-center justify-center"><AlertCircle className="h-3 w-3 text-red-500" /></div>
+      case "running":
+        return <div className="h-5 w-5 rounded-full bg-primary/20 flex items-center justify-center"><Loader2 className="h-3 w-3 text-primary animate-spin" /></div>
+      default:
+        return <div className="h-5 w-5 rounded-full bg-muted/50 flex items-center justify-center"><div className="h-2 w-2 rounded-full bg-muted-foreground/30" /></div>
+    }
+  }
+
+  // Running scanner name (simplified)
+  const runningName = currentScanner && !currentScanner.includes("✓") && !currentScanner.includes("⚠️")
+    ? currentScanner.split(",")[0].trim()
+    : (isAiAggregating ? "AI 聚合分析" : isOrchestrating ? "AI 编排决策" : "")
+
   return (
-    <div className="space-y-8 w-full max-w-lg mx-auto">
-      <div className="text-center space-y-4">
-        {isFallback ? (
-          <AlertCircle className="h-10 w-10 mx-auto text-amber-500" />
-        ) : isAiAggregating ? (
-          <div className="relative mx-auto h-14 w-14 flex items-center justify-center">
-            <Brain className="h-10 w-10 text-violet-500 animate-pulse relative z-10" />
-            <div className="absolute inset-0 rounded-full bg-violet-500/10 animate-ping" style={{ animationDuration: "2s" }} />
-            <div className="absolute inset-2 rounded-full bg-violet-500/5 animate-ping" style={{ animationDuration: "3s", animationDelay: "0.5s" }} />
-          </div>
-        ) : isEscalating ? (
-          <Zap className="h-10 w-10 animate-pulse mx-auto text-amber-500" />
-        ) : isComplete ? (
-          <CheckCircle2 className="h-10 w-10 mx-auto text-emerald-500" />
-        ) : isCrawling ? (
-          <div className="relative mx-auto h-14 w-14 flex items-center justify-center">
-            <Globe className="h-10 w-10 text-cyan-500 animate-spin" style={{ animationDuration: "3s" }} />
-            <Search className="h-5 w-5 text-cyan-300 absolute bottom-0 right-0 animate-pulse" />
-          </div>
-        ) : isOrchestrating ? (
-          <Brain className="h-10 w-10 animate-pulse mx-auto text-violet-500" />
-        ) : (
-          <div className="relative mx-auto h-16 w-16 flex items-center justify-center">
-            {/* Animated scanning radar icon */}
-            <div className="absolute inset-0 rounded-full bg-primary/10 animate-ping" style={{ animationDuration: "1.5s" }} />
-            <div className="absolute inset-3 rounded-full bg-primary/10 animate-ping" style={{ animationDuration: "2.5s", animationDelay: "0.4s" }} />
-            {/* Rotating radar sweep */}
-            <div className="absolute inset-0 rounded-full border-2 border-primary/30 animate-spin" style={{ animationDuration: "2s" }} />
-            <div className="absolute inset-1.5 rounded-full border border-primary/15 animate-spin" style={{ animationDuration: "3s", animationDirection: "reverse" }} />
-            {/* Center icon */}
-            <Activity className="h-8 w-8 text-primary relative z-10" />
-          </div>
-        )}
-        <div>
-          <h2 className="text-xl font-bold">
-            {isFallback ? "⚠️ 回退模式" : isAiAggregating ? "🤖 AI 正在分析扫描结果" : isCrawling ? "🕷️ 网站页面爬取中" : isEscalating ? "⚡ 动态深度扫描升级" : isOrchestrating ? "🤖 AI 编排决策中" : isComplete ? "✓ 扫描完成" : "安全扫描进行中"}
-          </h2>
-          {(currentScanner || isScanning || isOrchestrating || isFallback || isCrawling || isEscalating) && (
-            <p className={`mt-2 text-sm leading-relaxed ${
-              isFallback ? "text-amber-500" : isAiAggregating ? "text-violet-500" : isCrawling ? "text-cyan-500" : isEscalating ? "text-amber-500" : isOrchestrating ? "text-violet-500" : isComplete ? "text-emerald-500" : "text-muted-foreground"
-            }`}>
-              {isAiAggregating ? (
-                <span className="flex items-center justify-center gap-1.5">
-                  <span className="inline-block w-2 h-2 rounded-full bg-violet-500 animate-bounce" style={{ animationDelay: "0ms" }} />
-                  <span className="inline-block w-2 h-2 rounded-full bg-violet-500 animate-bounce" style={{ animationDelay: "150ms" }} />
-                  <span className="inline-block w-2 h-2 rounded-full bg-violet-500 animate-bounce" style={{ animationDelay: "300ms" }} />
-                  <span className="ml-1">{currentScanner}<AnimatedDots /></span>
-                </span>
-              ) : isOrchestrating || isFallback || isCrawling || isEscalating || isComplete ? (
-                currentScanner || "准备扫描..."
-              ) : (
-                <span className="flex flex-col items-center gap-1.5">
-                  <span className="flex items-center justify-center gap-1.5">
-                    <span className="inline-block w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: "0ms" }} />
-                    <span className="inline-block w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: "150ms" }} />
-                    <span className="inline-block w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: "300ms" }} />
-                    <span className="ml-1 font-medium text-foreground">{currentScanner || "正在初始化扫描器..."}<AnimatedDots /></span>
-                  </span>
-                  <span className="flex items-center justify-center gap-3 text-[11px] text-primary/60 mt-1">
-                    <span className="animate-pulse">{scannerDone}/{scannerTotal} 完成 · {scannerRunning} 运行中</span>
-                    <span className="inline-block w-1 h-1 rounded-full bg-primary/40" />
-                    <span className="animate-pulse" style={{ animationDelay: "1s" }}>{scanningMessages[scanMsgIdx]}</span>
-                  </span>
-                </span>
-              )}
-            </p>
-          )}
-          {isAiAggregating && (
-            <p className="text-[11px] text-violet-400/70 mt-1.5 animate-pulse">
-              DeepSeek 正在交叉关联分析 · 预计需要 10-30 秒
-            </p>
-          )}
-        </div>
-      </div>
-      <div className="space-y-2">
-        <div className="flex justify-between text-sm">
-          <span className="text-muted-foreground">{isAiAggregating ? "AI 分析进度" : isCrawling ? "页面爬取进度" : isEscalating ? "深度扫描进度" : "扫描进度"}</span>
-          <span className="font-medium">{percent}%</span>
-        </div>
-        <div className="h-3 bg-muted rounded-full overflow-hidden">
-          <div className={`h-full rounded-full transition-all duration-500 ease-out ${isFallback ? "bg-amber-500" : isAiAggregating ? "bg-violet-500" : isCrawling ? "bg-cyan-500" : isEscalating ? "bg-amber-500" : isComplete ? "bg-emerald-500" : "bg-primary"}`}
-            style={{ width: `${percent}%` }} />
-        </div>
-        <div className="flex justify-between text-xs text-muted-foreground pt-1">
-          <span>Elapsed: {formatTime(displayElapsed) || "0s"}</span>
-          <span>{showEta ? "Remaining: ~" + formatTime(displayEta) : percent >= 100 ? "Done" : ""}</span>
-        </div>
-      </div>
-      {scannerStatuses.length > 0 && (
-        engine === "ai" ? (
-          <details className="group">
-            <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground transition-colors list-none flex items-center justify-center gap-1 py-1">
-              <ChevronDown className="h-3 w-3 group-open:rotate-180 transition-transform" />
-              {scannerDone}/{scannerTotal} 个扫描器 · {scannerDone - scannerStatuses.filter(s => s.status === "failed").length} 成功 · 点击查看详情
-            </summary>
-            <div className="space-y-2 max-h-60 overflow-y-auto pr-1 mt-2">
-              {scannerStatuses.map(s => (
-                <ScannerStatusItem key={s.scannerName} s={s} />
-              ))}
+    <div className="w-full max-w-xl mx-auto">
+      {/* Glass card */}
+      <div className="relative overflow-hidden rounded-2xl border border-border/60 bg-gradient-to-br from-card/90 via-card/50 to-muted/30 backdrop-blur-xl shadow-2xl shadow-black/10">
+        {/* Decorative top glow */}
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
+
+        <div className="p-6 sm:p-8 space-y-6">
+
+          {/* ── Header: Radar + Title ── */}
+          <div className="flex items-center gap-5">
+            {/* Animated radar */}
+            <div className="relative shrink-0">
+              <div className="relative h-16 w-16 flex items-center justify-center">
+                {/* Outer glow rings */}
+                <div className="absolute inset-0 rounded-full bg-primary/5 animate-ping" style={{ animationDuration: "2s" }} />
+                <div className="absolute inset-2 rounded-full bg-primary/5 animate-ping" style={{ animationDuration: "2.5s", animationDelay: "0.5s" }} />
+                <div className="absolute inset-4 rounded-full bg-primary/5 animate-ping" style={{ animationDuration: "3s", animationDelay: "1s" }} />
+                {/* Rotating radar lines */}
+                <svg className="absolute inset-0 w-full h-full animate-spin" style={{ animationDuration: "3s" }} viewBox="0 0 64 64">
+                  <defs>
+                    <linearGradient id="radarGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity="0.3" />
+                      <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity="0" />
+                    </linearGradient>
+                  </defs>
+                  <path d="M32 32 L32 0 A32 32 0 0 1 64 32 Z" fill="url(#radarGrad)" />
+                </svg>
+                {/* Center icon */}
+                <div className="relative z-10 h-10 w-10 rounded-full bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center ring-1 ring-primary/20">
+                  {isComplete ? (
+                    <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+                  ) : isAiAggregating ? (
+                    <Brain className="h-5 w-5 text-violet-500 animate-pulse" />
+                  ) : isFallback ? (
+                    <AlertCircle className="h-5 w-5 text-amber-500" />
+                  ) : (
+                    <Activity className="h-5 w-5 text-primary" />
+                  )}
+                </div>
+              </div>
             </div>
-          </details>
-        ) : (
-          <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-            {scannerStatuses.map(s => (
-              <ScannerStatusItem key={s.scannerName} s={s} />
-            ))}
+
+            {/* Title + status */}
+            <div className="min-w-0 flex-1">
+              <h2 className="text-lg font-bold tracking-tight">
+                {isComplete ? "扫描完成" : isAiAggregating ? "AI 聚合分析中" : isFallback ? "回退模式" : "安全扫描进行中"}
+              </h2>
+              <p className="text-sm text-muted-foreground mt-0.5 truncate">
+                {runningName ? (
+                  <span className="flex items-center gap-1.5">
+                    {!isComplete && !isAiAggregating && <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />}
+                    {runningName}
+                  </span>
+                ) : isComplete ? (
+                  "所有扫描器已完成"
+                ) : isOrchestrating ? (
+                  "AI 正在分析目标并选择扫描方案..."
+                ) : (
+                  "正在初始化扫描引擎..."
+                )}
+              </p>
+            </div>
+
+            {/* Percent badge */}
+            <div className="shrink-0 text-right">
+              <div className={`text-3xl font-black tabular-nums tracking-tighter ${isComplete ? "text-emerald-500" : "text-primary"}`}>
+                {percent}<span className="text-lg font-medium text-muted-foreground">%</span>
+              </div>
+              <div className="text-[10px] text-muted-foreground/60 mt-0.5">
+                {scannerDone}/{scannerTotal} 扫描器
+              </div>
+            </div>
           </div>
-        )
-      )}
+
+          {/* ── Progress bar ── */}
+          <div className="space-y-1.5">
+            <div className="h-2.5 bg-muted/80 rounded-full overflow-hidden ring-1 ring-border/30">
+              <div
+                className={`h-full rounded-full transition-all duration-700 ease-out relative ${
+                  isComplete ? "bg-gradient-to-r from-emerald-500 to-emerald-400" :
+                  isAiAggregating ? "bg-gradient-to-r from-violet-600 to-violet-400" :
+                  isFallback ? "bg-gradient-to-r from-amber-500 to-amber-400" :
+                  "bg-gradient-to-r from-primary via-primary/80 to-primary/60"
+                }`}
+                style={{ width: `${percent}%` }}
+              >
+                {/* Animated shine on the progress bar */}
+                {!isComplete && (
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer" style={{ backgroundSize: "200% 100%" }} />
+                )}
+              </div>
+            </div>
+            <div className="flex justify-between text-xs text-muted-foreground/70">
+              <span className="flex items-center gap-1">
+                <Clock className="h-3 w-3" />
+                {formatTime(displayElapsed) || "0s"}
+              </span>
+              <span>
+                {showEta ? `剩余 ~${formatTime(displayEta)}` : isComplete ? "已完成" : "估算剩余时间..."}
+              </span>
+            </div>
+          </div>
+
+          {/* ── Scanner timeline ── */}
+          {scannerStatuses.length > 0 && (
+            <div className="space-y-0">
+              <div className="flex items-center gap-2 mb-3">
+                <Shield className="h-3.5 w-3.5 text-muted-foreground/60" />
+                <span className="text-xs font-medium text-muted-foreground/60 uppercase tracking-wider">扫描器执行状态</span>
+              </div>
+              <div className="relative">
+                {/* Vertical line */}
+                <div className="absolute left-[9px] top-2 bottom-2 w-px bg-border/60" />
+
+                <div className="space-y-0">
+                  {scannerStatuses.map((s, i) => {
+                    const catColor: Record<string, string> = {
+                      sast: "text-blue-500", secret: "text-red-500", dependency: "text-amber-500",
+                      filesystem: "text-purple-500", ai: "text-violet-500",
+                    }
+                    const catBg: Record<string, string> = {
+                      sast: "bg-blue-500/10", secret: "bg-red-500/10", dependency: "bg-amber-500/10",
+                      filesystem: "bg-purple-500/10", ai: "bg-violet-500/10",
+                    }
+                    return (
+                      <div key={s.scannerName} className="relative flex items-start gap-3 py-2 group">
+                        {/* Connector dot */}
+                        <div className="relative z-10 mt-0.5">
+                          <StatusIcon status={s.status} />
+                        </div>
+                        {/* Scanner info */}
+                        <div className="flex-1 min-w-0 flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className={`inline-flex items-center justify-center h-5 w-5 rounded ${catBg[s.category] || "bg-muted"}`}>
+                              {scannerIcons[s.scannerName] || defaultScannerIcon}
+                            </span>
+                            <span className={`text-sm font-medium truncate ${s.status === "pending" ? "text-muted-foreground/50" : s.status === "failed" ? "text-red-500" : ""}`}>
+                              {s.displayName}
+                            </span>
+                            {s.status === "running" && (
+                              <span className="flex gap-0.5">
+                                <span className="h-1 w-1 rounded-full bg-primary animate-bounce" style={{ animationDelay: "0ms" }} />
+                                <span className="h-1 w-1 rounded-full bg-primary animate-bounce" style={{ animationDelay: "150ms" }} />
+                                <span className="h-1 w-1 rounded-full bg-primary animate-bounce" style={{ animationDelay: "300ms" }} />
+                              </span>
+                            )}
+                          </div>
+                          <span className={`text-xs shrink-0 ${
+                            s.status === "completed" ? "text-emerald-500 font-medium" :
+                            s.status === "running" ? "text-primary" :
+                            s.status === "failed" ? "text-red-500" :
+                            "text-muted-foreground/40"
+                          }`}>
+                            {s.status === "completed" ? `${s.count} issues` :
+                             s.status === "running" ? "扫描中..." :
+                             s.status === "failed" ? "失败" :
+                             "等待中"}
+                          </span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── File filter info ── */}
+          {totalFiles && skippedFiles ? (
+            <div className="flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground/50 pt-1 border-t border-border/30">
+              <File className="h-3 w-3" />
+              {totalFiles} 个文件 · 过滤 {skippedFiles} 个非源码
+            </div>
+          ) : null}
+        </div>
+      </div>
     </div>
   )
 }
@@ -356,8 +420,14 @@ function ReportHeader({ scan, duration }: { scan: ScanDetail; duration: string }
               <span className="w-1 h-1 rounded-full bg-muted-foreground/30" />
               <span>{scan.totalChecks} 项检查</span>
               <span className="w-1 h-1 rounded-full bg-muted-foreground/30" />
-              <span>{scan.vulnerabilities.length} 个安全发现</span>
+              <span>{scan.vulnerabilities?.length ?? 0} 个安全发现</span>
             </div>
+            {scan.totalFiles && scan.skippedFiles ? (
+              <p className="text-xs text-muted-foreground/60 mt-1.5 flex items-center gap-1.5">
+                <File className="h-3 w-3" />
+                原始目录共 {scan.totalFiles} 个文件，系统自动过滤了 {scan.skippedFiles} 个非源码目录文件（node_modules、.git 等），实际参与扫描 {scan.totalFiles - scan.skippedFiles} 个文件
+              </p>
+            ) : null}
           </div>
           {/* Right: Risk Score */}
           <div className="flex flex-col items-center gap-2 p-5 rounded-xl border border-border/50 bg-card/50 shrink-0">
@@ -376,7 +446,7 @@ function ReportHeader({ scan, duration }: { scan: ScanDetail; duration: string }
 // ─── Report Section: Executive Summary ──────────────────────────────────────────
 
 function ExecutiveSummary({ scan, aggregation }: { scan: ScanDetail; aggregation: AggregationSummary | null }) {
-  const summary = scan.summary
+  const summary = scan.summary ?? { critical: 0, high: 0, medium: 0, low: 0, passed: 0 }
   const items = [
     { label: "紧急 (Critical)", count: summary.critical, color: "text-destructive", bg: "bg-destructive/10", border: "border-destructive/30" },
     { label: "高危 (High)", count: summary.high, color: "text-red-500", bg: "bg-red-500/10", border: "border-red-500/30" },
@@ -434,7 +504,7 @@ function parseScannerDecisions(reasoning: string): { name: string; matched: bool
   const decisions: { name: string; matched: boolean; rationale: string }[] = []
   // 匹配形如: "- scannerName：匹配|跳过|不匹配。原因..."
   const scannerNames = ["semgrep", "gitleaks", "bandit", "npm-audit", "pip-audit",
-    "dependency-check", "trivy", "checkov", "nuclei", "ai-scanner"]
+    "dependency-check", "trivy", "checkov", "nuclei"]
   const lines = reasoning.split("\n")
   for (const line of lines) {
     const trimmed = line.replace(/^-\s*/, "").trim()
@@ -915,7 +985,7 @@ function ScanLogViewer({ logs }: { logs?: import("@/lib/api/types").LogEntry[] }
 
 // ─── Report Section: Vulnerability Findings (by severity) ──────────────────
 
-const SeveritySection = ({ severity, vulnerabilities }: { severity: string; vulnerabilities: ScanDetail["vulnerabilities"] }) => {
+const SeveritySection = ({ severity, vulnerabilities, scanId }: { severity: string; vulnerabilities: ScanDetail["vulnerabilities"]; scanId: string }) => {
   const [expanded, setExpanded] = useState(false)
   const theme: Record<string, { icon: React.ReactNode; border: string; header: string; text: string }> = {
     Critical: { icon: <AlertTriangle className="h-4 w-4" />, border: "border-destructive/20", header: "bg-destructive/10 text-destructive border-b border-destructive/20", text: "text-destructive" },
@@ -953,7 +1023,16 @@ const SeveritySection = ({ severity, vulnerabilities }: { severity: string; vuln
                     {vuln.source}
                   </span>
                 )}
-                {vuln.cve !== "—" && <Badge variant="outline" className="text-[10px]">{vuln.cve}</Badge>}
+                {vuln.cve !== "—" && vuln.isRealCve ? (
+                  <a href={`https://nvd.nist.gov/vuln/detail/${vuln.cve}`} target="_blank" rel="noopener noreferrer" className="inline-flex">
+                    <Badge variant="default" className="text-[10px] bg-red-900/30 text-red-400 hover:bg-red-900/50 border-red-800/50 gap-1">
+                      <ExternalLink className="h-3 w-3" />
+                      {vuln.cve}
+                    </Badge>
+                  </a>
+                ) : vuln.cve !== "—" ? (
+                  <Badge variant="outline" className="text-[10px] text-muted-foreground">{vuln.cve}</Badge>
+                ) : null}
               </summary>
               <div className="px-4 pb-4 border-t border-border pt-3 space-y-3">
                 <div className="grid sm:grid-cols-2 gap-3">
@@ -976,6 +1055,29 @@ const SeveritySection = ({ severity, vulnerabilities }: { severity: string; vuln
                     <p className="text-sm text-muted-foreground bg-emerald-500/5 border border-emerald-500/10 rounded-lg p-3">{vuln.recommendation}</p>
                   </div>
                 )}
+                <div className="flex items-center gap-2 pt-2">
+                  <button
+                    onClick={async () => {
+                      try {
+                        await fetch(`/api/scans/${scanId}/suppress`, {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            scanner: vuln.source,
+                            cve: vuln.cve,
+                            id: vuln.id,
+                            comment: `False positive: ${vuln.name}`,
+                          }),
+                        })
+                        // 刷新页面
+                        window.location.reload()
+                      } catch {}
+                    }}
+                    className="text-[10px] text-muted-foreground/50 hover:text-red-400 transition-colors underline underline-offset-2"
+                  >
+                    标记为误报
+                  </button>
+                </div>
                 {vuln.code && (
                   <div>
                     <h4 className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">相关代码</h4>
@@ -1003,7 +1105,6 @@ function scannerCategoryToKey(source: string): string {
     gitleaks: "secret",
     "npm-audit": "dependency", "pip-audit": "dependency",
     trivy: "filesystem", checkov: "filesystem", nuclei: "filesystem", wapiti: "filesystem", sqlmap: "filesystem",
-    "ai-scanner": "ai",
     subfinder: "dns", assetfinder: "dns", shuffledns: "dns", amass: "dns",
     nmap: "network", "tls-analyzer": "network",
     ffuf: "web", gobuster: "web", kiterunner: "web", httpx: "web", wafw00f: "web", gitdumper: "web",
@@ -1014,7 +1115,7 @@ function scannerCategoryToKey(source: string): string {
   return map[source] || "web"
 }
 
-function VulnerabilityDetails({ vulnerabilities }: { vulnerabilities: ScanDetail["vulnerabilities"] }) {
+function VulnerabilityDetails({ vulnerabilities, scanId }: { vulnerabilities: ScanDetail["vulnerabilities"]; scanId: string }) {
   const groups: Record<string, ScanDetail["vulnerabilities"]> = { Critical: [], High: [], Medium: [], Low: [] }
   for (const v of vulnerabilities) {
     if (groups[v.severity]) groups[v.severity].push(v)
@@ -1050,7 +1151,7 @@ function VulnerabilityDetails({ vulnerabilities }: { vulnerabilities: ScanDetail
       )}
 
       {["Critical", "High", "Medium", "Low"].map(sev => (
-        <SeveritySection key={sev} severity={sev} vulnerabilities={groups[sev] || []} />
+        <SeveritySection key={sev} severity={sev} vulnerabilities={groups[sev] || []} scanId={scanId} />
       ))}
     </div>
   )
@@ -1063,16 +1164,17 @@ function AIDeepAnalysis({ scan }: { scan: ScanDetail }) {
   const llm = useLLMAnalysis()
 
   const handleAnalyze = () => {
+    const vulnPayload = (scan.vulnerabilities || []).map(v => ({
+      name: v.name,
+      severity: v.severity,
+      location: v.location,
+      description: v.description,
+    }))
     llm.mutate({
       target: scan.target,
       riskScore: scan.riskScore,
       summary: scan.summary,
-      vulnerabilities: scan.vulnerabilities.map(v => ({
-        name: v.name,
-        severity: v.severity,
-        location: v.location,
-        description: v.description,
-      })),
+      vulnerabilities: vulnPayload,
     })
   }
 
@@ -1270,6 +1372,7 @@ function SarifDownloadButton({ scan }: { scan: ScanDetail }) {
 // ─── Main Report Template ───────────────────────────────────────────────────────
 
 function SecurityReport({ scan }: { scan: ScanDetail }) {
+  const vulnerabilities = scan.vulnerabilities ?? []
   const aggregation: AggregationSummary | null = scan.aiAggregation || null
   const plan = scan.orchestratorPlan
   const createdAt = scan.createdAt || new Date().toISOString()
@@ -1363,7 +1466,7 @@ function SecurityReport({ scan }: { scan: ScanDetail }) {
 
       {/* Section 2: Scanner Results */}
       <div id="scanners" className={sectionStyle}>
-        <ScannerResultsTable scanners={scan.scanners} vulnerabilities={scan.vulnerabilities} />
+        <ScannerResultsTable scanners={scan.scanners} vulnerabilities={vulnerabilities} />
       </div>
 
       {/* Divider */}
@@ -1373,7 +1476,7 @@ function SecurityReport({ scan }: { scan: ScanDetail }) {
       {aggregation && (
         <>
           <div id="aggregation" className={sectionStyle}>
-            <AIAggregationReport aggregation={aggregation} vulnerabilities={scan.vulnerabilities} />
+            <AIAggregationReport aggregation={aggregation} vulnerabilities={vulnerabilities} />
           </div>
           <div className="border-t border-border/50" />
         </>
@@ -1381,7 +1484,7 @@ function SecurityReport({ scan }: { scan: ScanDetail }) {
 
       {/* Section 4: Vulnerability Details */}
       <div id="findings" className={sectionStyle}>
-        <VulnerabilityDetails vulnerabilities={scan.vulnerabilities} />
+        <VulnerabilityDetails vulnerabilities={vulnerabilities} scanId={scan?.id || ""} />
       </div>
 
       {/* Divider */}
@@ -1410,7 +1513,8 @@ function SecurityReport({ scan }: { scan: ScanDetail }) {
 
 // ─── Main Page ──────────────────────────────────────────────────────────────────
 
-export default function ScanDetailPage({ params }: { params: { id: string } }) {
+export default function ScanDetailPage() {
+  const params = useParams() as { id: string }
   const { t } = useI18n()
   const [scan, setScan] = useState<ScanDetail | null>(null)
   const [loading, setLoading] = useState(true)
@@ -1423,6 +1527,17 @@ export default function ScanDetailPage({ params }: { params: { id: string } }) {
 
     setLoading(true)
     setError("")
+
+    // 自动触发扫描：如果 session 状态是 pending，调 start 启动
+    const startScan = async () => {
+      try {
+        const res = await fetch(`/api/scans/${id}/start`, { method: "POST" })
+        if (!res.ok) console.warn("Scan auto-start failed:", res.status)
+      } catch (e) {
+        console.warn("Scan auto-start error:", e)
+      }
+    }
+    startScan()
 
     // 优先使用 SSE 实时推送，降级到轮询
     let fallbackTimer: ReturnType<typeof setInterval> | null = null
@@ -1491,7 +1606,7 @@ export default function ScanDetailPage({ params }: { params: { id: string } }) {
   if (isInProgress) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
-        <ScanProgressView progress={scan?.progress ?? null} engine={scan?.engine} />
+        <ScanProgressView progress={scan?.progress ?? null} engine={scan?.engine} totalFiles={scan?.totalFiles} skippedFiles={scan?.skippedFiles} />
       </div>
     )
   }

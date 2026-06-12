@@ -11,24 +11,50 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "DeepSeek API key not configured" }, { status: 500 })
     }
 
-    const vulnContext = data.vulnerabilities
-      .map(v => `- [${v.severity}] ${v.name} (${v.location}): ${v.description}`)
+    // ── Input validation ──────────────────────────────────────────────
+    // Sanitize target: truncate, remove control chars (prevent prompt injection)
+    const safeTarget = (data.target || "")
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "") // remove control chars except \t\n
+      .slice(0, 200)
+
+    // Validate riskScore format
+    const safeRisk = typeof data.riskScore === "string" ? data.riskScore.slice(0, 10) : "—"
+
+    // Validate summary fields
+    const safeSummary = {
+      critical: Math.max(0, Math.min(9999, Number(data.summary?.critical) || 0)),
+      high: Math.max(0, Math.min(9999, Number(data.summary?.high) || 0)),
+      medium: Math.max(0, Math.min(9999, Number(data.summary?.medium) || 0)),
+      low: Math.max(0, Math.min(9999, Number(data.summary?.low) || 0)),
+      passed: Math.max(0, Math.min(9999, Number(data.summary?.passed) || 0)),
+    }
+
+    // Validate & serialize vulnerabilities (limit to 200, sanitize each field)
+    const vulns = (data.vulnerabilities || []).slice(0, 200)
+    const vulnContext = vulns
+      .map(v => {
+        const sev = ["Critical", "High", "Medium", "Low"].includes(v.severity) ? v.severity : "Low"
+        const name = (v.name || "").replace(/[\x00-\x1F]/g, "").slice(0, 100)
+        const loc = (v.location || "").replace(/[\x00-\x1F]/g, "").slice(0, 200)
+        const desc = (v.description || "").replace(/[\x00-\x1F]/g, "").slice(0, 500)
+        return `- [${sev}] ${name} (${loc}): ${desc}`
+      })
       .join("\n")
 
     const prompt = `你是一个专业安全审计专家。分析以下安全扫描结果，给出中文分析报告。
 
 ## 扫描目标
-${data.target}
+${safeTarget}
 
 ## 风险评分
-${data.riskScore}
+${safeRisk}
 
 ## 漏洞汇总
-- 严重: ${data.summary.critical}
-- 高危: ${data.summary.high}
-- 中危: ${data.summary.medium}
-- 低危: ${data.summary.low}
-- 通过: ${data.summary.passed}
+- 严重: ${safeSummary.critical}
+- 高危: ${safeSummary.high}
+- 中危: ${safeSummary.medium}
+- 低危: ${safeSummary.low}
+- 通过: ${safeSummary.passed}
 
 ## 漏洞详情
 ${vulnContext || "无漏洞发现"}

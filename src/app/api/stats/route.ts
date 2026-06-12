@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server"
 import { getAllSessions } from "@/lib/scanner/scan-store"
+import { requireAuth } from "@/lib/api/auth"
 
-export async function GET() {
+export async function GET(request: Request) {
+  const auth = requireAuth(request)
+  if (auth) return auth
   await new Promise(r => setTimeout(r, 200))
 
   const sessions = getAllSessions()

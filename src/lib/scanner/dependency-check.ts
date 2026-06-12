@@ -100,8 +100,14 @@ export async function runDependencyCheckScan(targetPath: string): Promise<ScanRe
   }
 
   try {
-    const cmd = `"${dcPath}" --scan "${targetPath.replace(/\\/g, "/")}" --format JSON --out "${DC_OUTPUT_DIR}" --project VulnGuard --nvdApiKey 8c0e67ee-a5dd-4e10-b589-995164a8bf30`
-    const env = { ...process.env, JAVA_OPTS: process.env.JAVA_OPTS || "-Dhttp.proxyHost=127.0.0.1 -Dhttp.proxyPort=7897 -Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=7897" }
+    const nvdApiKey = process.env.NVD_API_KEY || ""
+    const nvdFlag = nvdApiKey ? `--nvdApiKey ${nvdApiKey}` : ""
+    const cmd = `"${dcPath}" --scan "${targetPath.replace(/\\/g, "/")}" --format JSON --out "${DC_OUTPUT_DIR}" --project VulnGuard ${nvdFlag}`
+    const proxy = process.env.HTTP_PROXY || process.env.HTTPS_PROXY || ""
+    const javaOpts = proxy
+      ? `-Dhttp.proxyHost=${new URL(proxy).hostname} -Dhttp.proxyPort=${new URL(proxy).port} -Dhttps.proxyHost=${new URL(proxy).hostname} -Dhttps.proxyPort=${new URL(proxy).port}`
+      : process.env.JAVA_OPTS || ""
+    const env = { ...process.env, ...(javaOpts ? { JAVA_OPTS: javaOpts } : {}) }
     await execAsync(cmd, {
       timeout: 300000, // 5 min (first run downloads DB)
       maxBuffer: 50 * 1024 * 1024,

@@ -8,11 +8,15 @@
 
 import { NextRequest } from "next/server"
 import { getSession } from "@/lib/scanner/scan-store"
+import { requireAuth } from "@/lib/api/auth"
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: { id: string } },
 ) {
+  const auth = requireAuth(request)
+  if (auth) return auth
+
   const id = params.id
   if (!id) {
     return new Response("Missing scan ID", { status: 400 })
@@ -64,7 +68,7 @@ export async function GET(
       }, 500)
 
       // 客户端断开
-      _request.signal.onabort = () => {
+      request.signal.onabort = () => {
         closed = true
         clearInterval(timer)
       }
