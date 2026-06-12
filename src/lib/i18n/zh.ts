@@ -116,7 +116,7 @@ export const zh = {
     date: "扫描日期",
     riskScore: "风险评分",
     engine: "扫描引擎",
-    ai: "AI 智能",
+    ai: "智能扫描",
     all: "全量",
     vulnerabilityDetails: "漏洞发现详情",
     totalFindings: "个发现",

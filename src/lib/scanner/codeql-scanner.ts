@@ -286,7 +286,7 @@ export async function runCodeqlScan(targetPath: string): Promise<ScanResult> {
       const outputFile = join(resultDir, `${qlLang}.sarif`)
       try {
         await execAsync(
-          `"${CODEQL_BIN}" database analyze "${dbDir}-${qlLang}" --format=sarif-latest --output="${outputFile}" --download ${queries.join(" ")}`,
+          `"${CODEQL_BIN}" database analyze "${dbDir}-${qlLang}" --format=sarif-latest --output="${outputFile}" ${queries.join(" ")}`,
           { timeout: 600000 }, // 10 分钟超时
         )
       } catch (err) {
