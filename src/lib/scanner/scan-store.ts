@@ -106,7 +106,7 @@ export function getAllSessions(): ScanSession[] {
           return null
         }
       })
-      .filter((s): s is ScanSession => s !== null)
+      .filter((s): s is ScanSession => s !== null && typeof s.id === "string" && s.id.startsWith("scan-"))
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
   } catch {
     return []
@@ -150,7 +150,8 @@ function safeTarget(session: ScanSession): string {
 }
 
 export function toScanSummary(session: ScanSession): ScanSummary {
-  const hasResults = session.summary.critical > 0 || session.summary.high > 0 || session.summary.medium > 0 || session.summary.low > 0
+  const s = session.summary || { critical: 0, high: 0, medium: 0, low: 0, passed: 0 }
+  const hasResults = s.critical > 0 || s.high > 0 || s.medium > 0 || s.low > 0
   return {
     id: session.id,
     target: safeTarget(session),
@@ -171,9 +172,9 @@ export function toScanDetail(session: ScanSession): ScanDetail {
     riskScore: session.riskScore,
     totalChecks: session.totalChecks,
     engine: session.scannerEngine,
-    summary: session.summary,
-    vulnerabilities: session.vulnerabilities,
-    scanners: session.scanners,
+    summary: session.summary || { critical: 0, high: 0, medium: 0, low: 0, passed: 0 },
+    vulnerabilities: session.vulnerabilities || [],
+    scanners: session.scanners || [],
     progress: session.progress,
     aiAggregation: session.aiAggregation,
     orchestratorPlan: session.orchestratorPlan,
