@@ -126,7 +126,7 @@ export async function runDependencyCheckScan(targetPath: string): Promise<ScanRe
 
     // Find the generated JSON report
     const files = readdirSync(DC_OUTPUT_DIR)
-    const reportFile = files.find(f => f.endsWith("-dependency-check-report.json"))
+    const reportFile = files.find(f => f.endsWith("-dependency-check-report.json") || f === "dependency-check-report.json")
     if (!reportFile) {
       return { vulnerabilities: [], totalChecks: 0, errors: ["No report generated"], scannerName }
     }
