@@ -6,16 +6,8 @@ import { requireAuth } from "@/lib/api/auth"
 const UPLOAD_DIR = resolve(join(process.cwd(), "data", "uploads"))
 
 // Limits
-const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB per file
-const MAX_TOTAL_FILES = 2000
-const BLOCKED_EXTENSIONS = new Set([
-  ".exe", ".dll", ".so", ".dylib", ".bin", ".obj", ".o", ".a", ".lib",
-  ".zip", ".tar", ".gz", ".rar", ".7z", ".bz2", ".xz",
-  ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".ico", ".webp", ".svg",
-  ".mp3", ".mp4", ".avi", ".mov", ".wmv", ".flv",
-  ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
-  ".ttf", ".otf", ".woff", ".woff2", ".eot",
-])
+const MAX_FILE_SIZE = 20 * 1024 * 1024 // 20 MB per file
+const MAX_TOTAL_FILES = 5000
 
 export async function POST(request: NextRequest) {
   const auth = requireAuth(request)

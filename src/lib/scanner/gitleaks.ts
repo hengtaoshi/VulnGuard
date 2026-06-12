@@ -44,8 +44,18 @@ export async function runGitleaksScan(targetPath: string): Promise<ScanResult> {
   let rawOutput = ""
   try {
     const absolutePath = resolve(targetPath)
+    // Skip non-source files (PDF, images, binaries, archives) to avoid false positives
+    const excludeGlobs = [
+      "*.pdf", "*.doc", "*.docx", "*.xls", "*.xlsx", "*.ppt", "*.pptx",
+      "*.jpg", "*.jpeg", "*.png", "*.gif", "*.bmp", "*.ico", "*.webp",
+      "*.svg", "*.mp3", "*.mp4", "*.avi", "*.mov", "*.wmv", "*.flv",
+      "*.zip", "*.tar", "*.gz", "*.rar", "*.7z", "*.bz2", "*.xz",
+      "*.exe", "*.dll", "*.so", "*.dylib", "*.bin", "*.obj", "*.o",
+      "*.ttf", "*.otf", "*.woff", "*.woff2", "*.eot",
+    ]
+    const excludeFlag = excludeGlobs.map(g => `--exclude-globs='${g}'`).join(" ")
     const { stdout } = await execAsync(
-      `"${GITLEAKS_PATH}" detect --source="${absolutePath}" --no-git --no-banner --report-format=json --report-path=- --max-target-megabytes=200`,
+      `"${GITLEAKS_PATH}" detect --source="${absolutePath}" --no-git --no-banner --report-format=json --report-path=- --max-target-megabytes=200 ${excludeFlag}`,
       { timeout: 60000, maxBuffer: 10 * 1024 * 1024 },
     )
     rawOutput = stdout.trim()
