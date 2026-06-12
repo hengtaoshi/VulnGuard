@@ -124,9 +124,25 @@ export default function NewScanPage() {
       return
     }
 
-    // Filter out node_modules and other large non-source dirs
+    // Non-source file extensions — filtered out before upload
+    const NON_SOURCE_EXTS = new Set([
+      ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+      ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".ico", ".webp", ".svg",
+      ".mp3", ".mp4", ".avi", ".mov", ".wmv", ".flv",
+      ".exe", ".dll", ".so", ".dylib", ".bin", ".obj", ".o", ".a", ".lib",
+      ".zip", ".tar", ".gz", ".rar", ".7z", ".bz2", ".xz",
+      ".ttf", ".otf", ".woff", ".woff2", ".eot",
+    ])
+
+    // Filter out non-source dirs and non-source extensions
     const filtered = allFiles.filter(f => {
       const path = (f as any).webkitRelativePath || f.name
+
+      // Skip non-source extensions
+      const ext = path.slice(path.lastIndexOf(".")).toLowerCase()
+      if (NON_SOURCE_EXTS.has(ext)) return false
+
+      // Skip known non-source directories
       return !/\/node_modules\//.test(path) &&
              !/\/\.git\//.test(path) &&
              !/\/dist\//.test(path) &&

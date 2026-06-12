@@ -9,15 +9,7 @@ const UPLOAD_DIR = resolve(join(process.cwd(), "data", "uploads"))
 const MAX_FILE_SIZE = 20 * 1024 * 1024 // 20 MB per file
 const MAX_TOTAL_FILES = 5000
 
-// Non-source file extensions — silently skipped during upload, not an error
-const NON_SOURCE_EXTS = new Set([
-  ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
-  ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".ico", ".webp", ".svg",
-  ".mp3", ".mp4", ".avi", ".mov", ".wmv", ".flv",
-  ".exe", ".dll", ".so", ".dylib", ".bin", ".obj", ".o", ".a", ".lib",
-  ".zip", ".tar", ".gz", ".rar", ".7z", ".bz2", ".xz",
-  ".ttf", ".otf", ".woff", ".woff2", ".eot",
-])
+
 
 export async function POST(request: NextRequest) {
   const auth = requireAuth(request)
@@ -42,10 +34,6 @@ export async function POST(request: NextRequest) {
         if (normalized.includes("..")) {
           return NextResponse.json({ error: `非法路径: ${relativePath}` }, { status: 400 })
         }
-
-        // Silently skip non-source files (PDF, images, binaries, etc.)
-        const ext = normalized.slice(normalized.lastIndexOf(".")).toLowerCase()
-        if (NON_SOURCE_EXTS.has(ext)) continue
 
         // LIMIT: per-file size cap
         if (value.size > MAX_FILE_SIZE) {
