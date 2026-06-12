@@ -1,9 +1,9 @@
 /**
- * Next.js Middleware — sets SCAN_AUTH_TOKEN as an HttpOnly cookie for API routes.
+ * Next.js Middleware — sets SCAN_AUTH_TOKEN as an HttpOnly cookie on every page load.
  *
  * This eliminates the need for NEXT_PUBLIC_SCAN_AUTH_TOKEN (which gets inlined
- * into client JS bundles). The client simply relies on the browser sending the
- * cookie with every same-origin API request.
+ * into client JS bundles). The browser automatically sends the cookie with
+ * every same-origin request, including API calls and EventSource (SSE).
  */
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
@@ -12,7 +12,6 @@ export function middleware(request: NextRequest) {
   const token = process.env.SCAN_AUTH_TOKEN
   if (!token) return NextResponse.next()
 
-  // Only set the cookie on API responses to minimize scope
   const response = NextResponse.next()
 
   // Check if the auth cookie is already present and correct
@@ -21,7 +20,7 @@ export function middleware(request: NextRequest) {
     response.cookies.set("scan_auth_token", token, {
       httpOnly: true,
       sameSite: "lax",
-      path: "/api",
+      path: "/",
       maxAge: 60 * 60 * 24, // 24 hours
       secure: process.env.NODE_ENV === "production",
     })
@@ -31,5 +30,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: "/api/:path*",
+  matcher: "/(.*)",
 }
