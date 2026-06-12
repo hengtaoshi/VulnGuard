@@ -158,7 +158,7 @@ interface SarifLocation {
     }
     region?: {
       startLine: number
-      startColumn: number
+      startColumn?: number
     }
   }
 }

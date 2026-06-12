@@ -5,6 +5,11 @@ import { updateSession } from "./scan-store"
 import { addLog } from "./scan-log"
 import { analyzeTarget } from "./target-analyzer"
 import type { TargetAnalysis } from "./target-analyzer"
+import { createOrchestratorPlan, createFallbackPlan } from "./orchestrator"
+import type { OrchestratorPlan } from "./orchestrator"
+import { aggregateScanResults } from "./ai-aggregator"
+import { isLlmAvailable } from "./llm-client"
+import { filterIgnored, getAllIgnoreRules } from "../ignore-rules"
 import { execSync } from "child_process"
 import { join } from "path"
 import { writeFileSync, existsSync, mkdirSync } from "fs"
@@ -109,6 +114,12 @@ function selectScannersByRules(
     selected.push("dependency-check")
   }
 
+  // ── CodeQL（语义 SAST，覆盖多语言） ──────────────────────────────────
+  const codeqlLangs = ["javascript", "typescript", "python", "java", "go", "c", "cpp", "csharp", "swift", "ruby"]
+  if (langs.size > 0 && codeqlLangs.some(l => langs.has(l))) {
+    selected.push("codeql")
+  }
+
   // ── 综合性扫描器 ─────────────────────────────────────────────────
   // trivy: comprehensive, always useful
   selected.push("trivy")
@@ -118,15 +129,12 @@ function selectScannersByRules(
     selected.push("nuclei")
   }
 
-  // AI Scanner: deep code review (always last)
-  selected.push("ai-scanner")
-
   // Filter by availability and deduplicate
   const result = selected.filter((n, i, a) => a.indexOf(n) === i).filter(n => availableNames.includes(n))
 
   // "all" engine: add every available scanner
   if (engine === "all") {
-    return availableNames.filter(n => n !== "ai-scanner").concat("ai-scanner")
+    return availableNames
   }
 
   return result
@@ -146,18 +154,14 @@ function buildParallelGroups(scannerNames: string[], allScanners: Scanner[]): st
     // Categorize by scanner type
     if (s.category === "secret" || s.name === "semgrep") {
       fast.push(name)
+    } else if (s.name === "codeql") {
+      // CodeQL: db create + analyze is significantly slower than pattern-based SAST
+      slow.push(name)
     } else if (s.category === "dependency" || s.category === "sast" || s.name === "checkov") {
       medium.push(name)
     } else {
       slow.push(name)
     }
-  }
-
-  // AI scanner always last
-  const aiIndex = slow.indexOf("ai-scanner")
-  if (aiIndex >= 0) {
-    slow.splice(aiIndex, 1)
-    slow.push("ai-scanner")
   }
 
   if (fast.length > 0) groups.push(fast)
@@ -193,23 +197,59 @@ async function executeScanners(
   const scannerStatuses = makeScannerStatuses(orderedScanners)
   const totalScanners = orderedScanners.length
   const startTime = Date.now()
-  const completedTimes: number[] = []
+  const categoryRuntimeMs: Record<string, number[]> = {}
+  const defaultEstimateMs: Record<string, number> = {
+    secret: 8000,
+    sast: 20000,
+    dependency: 90000,
+    filesystem: 120000,
+  }
+  const scannerStartTimes = new Map<string, number>()
 
-  function saveProgress(currentScanner: string, doneCount: number, results: typeof scannerStatuses) {
+  function saveProgress(
+    currentScanner: string,
+    doneCount: number,
+    results: typeof scannerStatuses,
+    completedScanner?: { name: string; category: string; runtime: number },
+  ) {
     let percent = totalScanners > 0 ? Math.round((doneCount / totalScanners) * 100) : 100
     if (percent < 5 && doneCount < totalScanners && results.some(s => s.status === "running" || s.status === "pending")) {
       percent = 5
     }
     const elapsed = Date.now() - startTime
+
+    // Record per-category runtime when a scanner just completed
+    if (completedScanner) {
+      const cat = completedScanner.category
+      if (!categoryRuntimeMs[cat]) categoryRuntimeMs[cat] = []
+      categoryRuntimeMs[cat].push(completedScanner.runtime)
+    }
+
+    // Estimate ETA: for each remaining scanner, use its category's average runtime
+    // (or a conservative default if no data yet for that category)
     let eta = 0
     if (doneCount > 0) {
-      completedTimes.push(elapsed)
-      const maxT = Math.max(...completedTimes)
-      const remaining = totalScanners - doneCount
-      const confidence = doneCount / totalScanners
-      const estimatedTotal = Math.round(maxT * (1 + (1 - confidence) * 3))
-      eta = Math.max(Math.round(elapsed * 0.3), estimatedTotal - elapsed)
+      const pendingScanners = results.filter(s => s.status === "running" || s.status === "pending")
+      let estimatedRemainingMs = 0
+      for (const ps of pendingScanners) {
+        const cat = ps.category
+        const catTimes = categoryRuntimeMs[cat]
+        let perScannerEstimate: number
+        if (catTimes && catTimes.length > 0) {
+          // Use average of actual runtimes for this category
+          perScannerEstimate = Math.round(catTimes.reduce((a, b) => a + b, 0) / catTimes.length)
+        } else if (defaultEstimateMs[cat] !== undefined) {
+          perScannerEstimate = defaultEstimateMs[cat]
+        } else {
+          perScannerEstimate = 60000 // 60s fallback for unknown categories
+        }
+        estimatedRemainingMs += perScannerEstimate
+      }
+      // Safety floor: at least 15s per remaining scanner
+      const safetyFloor = pendingScanners.length * 15000
+      eta = Math.max(safetyFloor, estimatedRemainingMs)
     }
+
     if (sessionId) {
       updateSession(sessionId, {
         progress: { percent, currentScanner, elapsed, eta, scannerStatuses: results },
@@ -244,10 +284,19 @@ async function executeScanners(
     const runningDisplay = groupScanners.map(s => s.displayName).join(", ")
     saveProgress(runningDisplay, completedCount, scannerStatuses)
 
+    // Heartbeat: update progress every 5s during long-running scanners to keep UI alive
+    const heartbeat = setInterval(() => {
+      const stillRunning = scannerStatuses.filter(st => st.status === "running").map(st => st.displayName)
+      if (stillRunning.length > 0) {
+        saveProgress(stillRunning.join(", "), completedCount, scannerStatuses)
+      }
+    }, 5000)
+
     const MAX_CONCURRENT = 5
 
     const runOneScanner = async (s: Scanner): Promise<void> => {
       if (sessionId) addLog(sessionId, "scanner", "info", `Starting ${s.displayName}`, undefined, s.name)
+      scannerStartTimes.set(s.name, Date.now())
       const result = await s.scan(targetPath).catch(err => ({
         vulnerabilities: [], totalChecks: 0,
         errors: [(err as Error).message], scannerName: s.name,
@@ -273,7 +322,17 @@ async function executeScanners(
         }
       }
       const stillRunning = scannerStatuses.filter(st => st.status === "running").map(st => st.displayName)
-      saveProgress(stillRunning.length > 0 ? stillRunning.join(", ") : "Finalizing...", completedCount, scannerStatuses)
+      const completedScanner = {
+        name: s.name,
+        category: orderedScanners.find(osc => osc.name === s.name)?.category || "unknown",
+        runtime: Date.now() - (scannerStartTimes.get(s.name) || Date.now()),
+      }
+      saveProgress(
+        stillRunning.length > 0 ? stillRunning.join(", ") : "Finalizing...",
+        completedCount,
+        scannerStatuses,
+        completedScanner,
+      )
       allResults.push(result)
     }
 
@@ -289,15 +348,25 @@ async function executeScanners(
         await Promise.race(Array.from(inFlight))
       }
     }
+    clearInterval(heartbeat)
   }
 
   // ── 确定性去重 ──────────────────────────────────────────────────────
+  // 真实 CVE 扫描器（产生如 CVE-2024-12345 格式的编号）
+  const REAL_CVE_SCANNERS = new Set([
+    "trivy", "npm-audit", "pip-audit", "dependency-check",
+    "cve-cpp", "swift", "osv-scanner", "nuclei",
+  ])
+
   const vulnerabilityMap = new Map<string, Vulnerability>()
   for (const result of allResults) {
     for (const vuln of result.vulnerabilities) {
+      // 设置 isRealCve — 由 source 扫描器决定
+      const isRealCve = REAL_CVE_SCANNERS.has(vuln.source || "")
+
       const key = `${vuln.name}:${vuln.location}:${vuln.description.slice(0, 80)}`
       if (!vulnerabilityMap.has(key)) {
-        vulnerabilityMap.set(key, vuln)
+        vulnerabilityMap.set(key, { ...vuln, isRealCve })
       }
     }
   }
@@ -381,7 +450,7 @@ export async function runCompositeScan(
     }
   }
 
-  // ── Phase 1: 规则选择扫描器 ─────────────────────────────────────────
+  // ── Phase 1: AI 编排 → 规则回退 ─────────────────────────────────────
   if (!targetAnalysis) {
     targetAnalysis = {
       targetPath,
@@ -400,11 +469,30 @@ export async function runCompositeScan(
     }
   }
 
-  const selectedScanners = selectScannersByRules(targetAnalysis, engine, availableNames)
+  let orchestratorPlan: OrchestratorPlan | null = null
+  let selectedScanners: string[] = []
 
-  if (sessionId) {
-    addLog(sessionId, "system", "info",
-      `Rules selected ${selectedScanners.length} scanners: ${selectedScanners.join(", ")}`)
+  // AI 编排：仅对 "ai" 引擎且 DeepSeek 可用时
+  if (engine === "ai" && isLlmAvailable()) {
+    if (sessionId) addLog(sessionId, "orchestrator", "info", "🤖 AI orchestrator analyzing target...")
+    orchestratorPlan = await createOrchestratorPlan(targetAnalysis, engine, allScanners, availableNames)
+  }
+
+  if (orchestratorPlan) {
+    selectedScanners = orchestratorPlan.selectedScanners
+    if (sessionId) {
+      addLog(sessionId, "orchestrator", "info",
+        `🤖 AI orchestrator: selected ${selectedScanners.length} scanners: ${selectedScanners.join(", ")}`,
+        `Priority: ${orchestratorPlan.scanPriority} | AI Review: ${orchestratorPlan.aiReview} | ${orchestratorPlan.reasoning.slice(0, 200)}`)
+      updateSession(sessionId, { orchestratorPlan })
+    }
+  } else {
+    // 规则回退（AI 不可用或 engine === "all"）
+    selectedScanners = selectScannersByRules(targetAnalysis, engine, availableNames)
+    if (sessionId) {
+      addLog(sessionId, "system", "info",
+        `Rules selected ${selectedScanners.length} scanners: ${selectedScanners.join(", ")}`)
+    }
   }
 
   const selectedScannerObjects = selectedScanners
@@ -412,12 +500,20 @@ export async function runCompositeScan(
     .filter((s): s is Scanner => s !== undefined)
 
   const statuses = makeScannerStatuses(selectedScannerObjects)
-  setProgress(0, `📋 Rules matched: ${selectedScanners.length} scanners selected`, statuses)
+  setProgress(0, `📋 ${orchestratorPlan ? "AI" : "Rules"} matched: ${selectedScanners.length} scanners selected`, statuses)
 
   // ── Phase 2: 执行扫描器 ─────────────────────────────────────────────
   const result = await executeScanners(allScanners, selectedScanners, targetPath, sessionId)
 
-  // ── Phase 3: 完成 ────────────────────────────────────────────────────
+  // ── Phase 3: 误报过滤（.vulnguard-ignore + UI 标记）────────────────
+  const { filtered: filteredVulns, ignoredCount } = filterIgnored(result.vulnerabilities)
+  if (ignoredCount > 0 && sessionId) {
+    addLog(sessionId, "system", "info", `🚫 Ignored ${ignoredCount} findings (suppressed by ignore rules)`)
+  }
+  // 替换 vulnerabilities 为过滤后的列表
+  result.vulnerabilities = filteredVulns
+
+  // ── Phase 4: 完成 ────────────────────────────────────────────────────
   setProgress(100, "✓ Scan complete. Generating report...",
     result.scannerResults.map(r => ({
       scannerName: r.scannerName,
@@ -429,7 +525,50 @@ export async function runCompositeScan(
     })),
   )
 
-  // ── Phase 4: SBOM 生成 ───────────────────────────────────────────────
+  // ── Phase 4: AI 聚合（跨引擎关联 + 假阳性检测）──────────────────────
+  if (sessionId && isLlmAvailable()) {
+    try {
+      addLog(sessionId, "aggregation", "info", "🧠 AI aggregating scan results...")
+
+      const scannerStats = result.scannerResults.map(r => ({
+        scannerName: r.scannerName,
+        count: r.count,
+      }))
+
+      // 获取现有忽略规则，作为上下文传给 AI 聚合器（避免重复误报）
+      const existingIgnorePatterns = getAllIgnoreRules().map(r => r.pattern)
+
+      const aggReport = await aggregateScanResults(
+        result.vulnerabilities,
+        scannerStats,
+        targetPath,
+        existingIgnorePatterns,
+      )
+
+      // 保存聚合报告到 session
+      updateSession(sessionId, {
+        aiAggregationReport: aggReport,
+        aiAggregation: {
+          totalFindings: aggReport.findings.length,
+          falsePositivesRemoved: aggReport.falsePositivesRemoved,
+          highConfidence: aggReport.findings.filter(f => f.confidence === "high").length,
+          mediumConfidence: aggReport.findings.filter(f => f.confidence === "medium").length,
+          lowConfidence: aggReport.findings.filter(f => f.confidence === "low").length,
+          correlatedFindings: aggReport.findings.filter(f => f.isCorrelated).length,
+          summary: aggReport.summary,
+          priorityActions: aggReport.priorityActions,
+        },
+      })
+
+      addLog(sessionId, "aggregation", "info",
+        `🧠 AI aggregation complete: ${aggReport.findings.length} findings, ${aggReport.falsePositivesRemoved} false positives removed`,
+        aggReport.priorityActions.slice(0, 3).join(" | "))
+    } catch (err) {
+      addLog(sessionId, "aggregation", "warn", `⚠ AI aggregation failed: ${(err as Error).message}`)
+    }
+  }
+
+  // ── Phase 5: SBOM 生成 ───────────────────────────────────────────────
   if (sessionId) {
     try {
       const sbomDir = join(process.cwd(), ".scans", "sbom")

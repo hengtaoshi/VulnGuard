@@ -32,6 +32,8 @@ export interface Vulnerability {
   severity: "Critical" | "High" | "Medium" | "Low"
   location: string
   cve: string
+  /** 是否为真实 CVE（如 CVE-2024-12345），false = 内部 ID（如 SG-1、CWE-89） */
+  isRealCve?: boolean
   description: string
   recommendation: string
   code?: string
@@ -93,6 +95,11 @@ export interface ScanDetail {
     aiReview: boolean
     scanPriority: "speed" | "depth" | "balanced"
   }
+  /** Number of source files uploaded for scanning */
+  totalFiles?: number
+  /** Number of files skipped (node_modules, .git, etc.) */
+  skippedFiles?: number
+  projectName?: string
   /** Full scan activity log */
   logs?: LogEntry[]
   createdAt?: string

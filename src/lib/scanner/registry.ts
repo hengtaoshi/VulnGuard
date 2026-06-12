@@ -11,13 +11,16 @@ import { runTrivyScan } from "./trivy"
 import { runBanditScan } from "./bandit"
 import { runCheckovScan } from "./checkov"
 import { runNucleiScan } from "./nuclei"
-import { runAIScan } from "./ai-scanner"
 import { runCveCppScan } from "./cve-cpp-scanner"
 import { runSwiftScan } from "./swift-scanner"
 import { runTrufflehogScan } from "./trufflehog-scanner"
 import { runBearerScan } from "./bearer-scanner"
 import { runScorecardScan } from "./scorecard-scanner"
 import { runOsvScan } from "./osv-scanner"
+import { runDependencyCheckScan } from "./dependency-check"
+import { runCodeqlScan } from "./codeql-scanner"
+import { runTrivyImageScan } from "./trivy"
+import { runAiScan } from "./ai-scanner"
 
 const TOOLS_BIN = join(process.cwd(), "tools", "bin")
 
@@ -120,6 +123,21 @@ const scanners: Scanner[] = [
     scan: runTrivyScan,
   },
   {
+    name: "trivy-image",
+    displayName: "Trivy Image (容器)",
+    category: "filesystem",
+    isAvailable: () => {
+      try {
+        execSync(`"${join(TOOLS_BIN, "trivy.exe")}" --version`, { stdio: "pipe", timeout: 5000 })
+        return true
+      } catch {
+        return false
+      }
+    },
+    // 需要传入镜像名而非路径，兼容 Scanner 接口但实际使用时需包装
+    scan: (targetPath: string) => runTrivyImageScan(targetPath),
+  },
+  {
     name: "nuclei",
     displayName: "Nuclei",
     category: "filesystem",
@@ -146,15 +164,6 @@ const scanners: Scanner[] = [
     category: "dependency",
     isAvailable: () => true,
     scan: (targetPath: string) => runSwiftScan(targetPath),
-  },
-  {
-    name: "ai-scanner",
-    displayName: "AI Scanner",
-    category: "ai",
-    isAvailable: () => {
-      return !!process.env.DEEPSEEK_API_KEY
-    },
-    scan: (targetPath: string) => runAIScan(targetPath),
   },
   {
     name: "trufflehog",
@@ -195,6 +204,55 @@ const scanners: Scanner[] = [
       return existsSync(join(TOOLS_BIN, "osv-scanner.exe"))
     },
     scan: (targetPath: string) => runOsvScan(targetPath),
+  },
+  {
+    name: "dependency-check",
+    displayName: "Dependency-Check",
+    category: "dependency",
+    isAvailable: () => {
+      const { join } = require("path") as typeof import("path")
+      const { existsSync } = require("fs") as typeof import("fs")
+      const TOOLS = join(process.cwd(), "tools", "bin")
+      // Check batch/sh scripts and extracted install directory
+      if (existsSync(join(TOOLS, "dependency-check.bat"))) return true
+      if (existsSync(join(TOOLS, "dependency-check.sh"))) return true
+      if (existsSync(join(process.cwd(), "tools", "dependency-check", "bin", "dependency-check.bat"))) return true
+      // Fallback: check PATH
+      try {
+        execSync("dependency-check --version 2>&1", { stdio: "pipe", timeout: 5000 })
+        return true
+      } catch {
+        return false
+      }
+    },
+    scan: (targetPath: string) => runDependencyCheckScan(targetPath),
+  },
+  {
+    name: "codeql",
+    displayName: "CodeQL",
+    category: "sast",
+    isAvailable: () => {
+      const { existsSync } = require("fs") as typeof import("fs")
+      const codeqlBin = join(process.cwd(), "tools", "bin", "codeql", "codeql", "codeql.exe")
+      if (existsSync(codeqlBin)) return true
+      // Also check for generic codeql in PATH
+      try {
+        execSync("codeql --version 2>&1", { stdio: "pipe", timeout: 5000 })
+        return true
+      } catch {
+        return false
+      }
+    },
+    scan: (targetPath: string) => runCodeqlScan(targetPath),
+  },
+  {
+    name: "ai-scanner",
+    displayName: "AI Code Review",
+    category: "ai",
+    isAvailable: () => {
+      return !!process.env.DEEPSEEK_API_KEY
+    },
+    scan: (targetPath: string) => runAiScan(targetPath),
   },
 ]
 

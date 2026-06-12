@@ -104,7 +104,8 @@ export async function runTrivyScan(targetPath: string): Promise<ScanResult> {
     // to avoid failed DB download (gcr.io not always accessible in China).
     const dbDir = join(trivyCacheDir, "db")
     const hasDb = existsSync(dbDir)
-    const scanners = hasDb ? "vuln,misconfig,secret" : "misconfig,secret"
+    // 启用所有扫描器：漏洞 + 错误配置 + secret + 许可证
+    const scanners = hasDb ? "vuln,misconfig,secret,license" : "misconfig,secret,license"
 
     const { stdout: output } = await execAsync(
       `"${TRIVY_PATH}" fs --format=json --quiet --scanners ${scanners} --cache-dir "${trivyCacheDir}" "${targetPath}"`,
@@ -113,8 +114,6 @@ export async function runTrivyScan(targetPath: string): Promise<ScanResult> {
         maxBuffer: 50 * 1024 * 1024,
         env: {
           ...process.env,
-          HTTP_PROXY: process.env.HTTP_PROXY || "http://127.0.0.1:7897",
-          HTTPS_PROXY: process.env.HTTPS_PROXY || "http://127.0.0.1:7897",
           TRIVY_DB_REPOSITORY: "ghcr.io/aquasecurity/trivy-db",
         },
       },
@@ -136,6 +135,59 @@ export async function runTrivyScan(targetPath: string): Promise<ScanResult> {
       vulnerabilities: [],
       totalChecks: 0,
       errors: [`Trivy scan failed: ${err instanceof Error ? err.message : String(err)}`],
+      scannerName,
+    }
+  }
+}
+
+/**
+ * 容器镜像扫描 — 调用 `trivy image` 分析 Docker 镜像
+ * 需要 Docker daemon 运行中
+ */
+export async function runTrivyImageScan(imageName: string): Promise<ScanResult> {
+  const scannerName = "trivy-image"
+  if (!isAvailable()) {
+    return { vulnerabilities: [], totalChecks: 0, errors: ["Trivy not found"], scannerName }
+  }
+
+  // 防止误传文件路径
+  if (/^[./\\]|[A-Z]:\\/i.test(imageName)) {
+    return {
+      vulnerabilities: [], totalChecks: 0,
+      errors: [`trivy-image 需要镜像名称（如 node:18），收到: ${imageName}`],
+      scannerName,
+    }
+  }
+
+  try {
+    const trivyCacheDir = join(process.cwd(), ".trivy-cache")
+    if (!existsSync(trivyCacheDir)) {
+      try { mkdirSync(trivyCacheDir, { recursive: true }) } catch { /* ignore */ }
+    }
+
+    const { stdout: output } = await execAsync(
+      `"${TRIVY_PATH}" image --format=json --quiet --scanners vuln,license --cache-dir "${trivyCacheDir}" "${imageName}"`,
+      {
+        timeout: 600000,
+        maxBuffer: 50 * 1024 * 1024,
+        env: { ...process.env, TRIVY_DB_REPOSITORY: "ghcr.io/aquasecurity/trivy-db" },
+      },
+    )
+
+    const result = parseTrivyOutput(output, scannerName)
+    if (result) return result
+    return { vulnerabilities: [], totalChecks: 0, errors: [], scannerName }
+  } catch (err: unknown) {
+    if (err instanceof Error && "stdout" in err) {
+      const stdout = (err as { stdout: string }).stdout?.toString().trim()
+      if (stdout) {
+        const result = parseTrivyOutput(stdout, scannerName)
+        if (result) return result
+      }
+    }
+    return {
+      vulnerabilities: [], totalChecks: 0,
+      errors: [`Trivy image scan failed: ${err instanceof Error ? err.message : String(err)}`],
       scannerName,
     }
   }

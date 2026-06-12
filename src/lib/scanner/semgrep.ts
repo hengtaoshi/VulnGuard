@@ -30,81 +30,84 @@ interface SemgrepOutput {
   paths: { scanned: string[] }
 }
 
+/**
+ * 尝试用远程 Semgrep Registry 规则运行（作为备用）
+ */
+function runRemoteSemgrep(targetPath: string): string | null {
+  try {
+    // p/default 包含安全规则 + 正确性规则
+    const remotes = ["p/security-audit", "p/default"]
+    for (const remote of remotes) {
+      try {
+        const target = targetPath.replace(/\\/g, "/")
+        return execSync(
+          `"semgrep" --config="${remote}" --json --timeout=60 "${target}"`,
+          { timeout: 180000, maxBuffer: 10 * 1024 * 1024, encoding: "utf-8", env: { ...process.env, PYTHONIOENCODING: "utf-8" } },
+        )
+      } catch { /* try next */ }
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
 export async function runSemgrepScan(targetPath: string): Promise<ScanResult> {
   const scannerName = "semgrep"
 
-  if (!existsSync(LOCAL_RULES)) {
-    return { vulnerabilities: [], totalChecks: 0, errors: ["Semgrep rules not found at " + LOCAL_RULES], scannerName }
+  // ── 优先使用本地规则 ───────────────────────────────────────
+  let stdout: string | null = null
+  let usedLocalRules = false
+
+  if (existsSync(LOCAL_RULES)) {
+    try {
+      const rulesPath = LOCAL_RULES.replace(/\\/g, "/")
+      const target = targetPath.replace(/\\/g, "/")
+      const cmd = `"semgrep" --config="${rulesPath}" --json --timeout=30 "${target}"`
+      stdout = execSync(cmd, { timeout: 120000, maxBuffer: 10 * 1024 * 1024, encoding: "utf-8", env: { ...process.env, PYTHONIOENCODING: "utf-8" } })
+      usedLocalRules = true
+    } catch { /* fall through to remote */ }
   }
 
-  try {
-    // Use execSync for reliable Windows compatibility
-    const rulesPath = LOCAL_RULES.replace(/\\/g, "/")
-    const target = targetPath.replace(/\\/g, "/")
-    const cmd = `"semgrep" --config="${rulesPath}" --json --timeout=30 "${target}"`
-    const stdout = execSync(cmd, { timeout: 120000, maxBuffer: 10 * 1024 * 1024, encoding: "utf-8", env: { ...process.env, PYTHONIOENCODING: "utf-8" } })
+  // ── 如果本地规则不存在或失败，尝试远程注册表 ─────────────
+  if (!stdout) {
+    stdout = runRemoteSemgrep(targetPath)
+  }
 
-    const jsonStart = stdout.indexOf("{")
-    const jsonEnd = stdout.lastIndexOf("}")
-    const jsonStr = jsonStart >= 0 && jsonEnd >= 0 ? stdout.slice(jsonStart, jsonEnd + 1) : stdout
-    const parsed: SemgrepOutput = JSON.parse(jsonStr)
-
-    const vulnerabilities: Vulnerability[] = parsed.results.map((r, i) => ({
-      id: `SG-${i + 1}`,
-      name: r.extra.message.split(".")[0] || "Semgrep finding",
-      severity: severityMap(r.extra.severity),
-      location: `${r.path}:${r.start.line}`,
-      cve: r.extra.metadata.cwe?.[0] || "CWE-Info",
-      description: r.extra.message,
-      recommendation: r.extra.metadata.references?.[0]
-        ? `参考: ${r.extra.metadata.references[0]}`
-        : "Review and fix the identified issue",
-      code: r.extra.lines || undefined,
-      source: scannerName,
-    }))
-
-    return {
-      vulnerabilities,
-      totalChecks: parsed.paths?.scanned?.length || vulnerabilities.length + 10,
-      errors: [],
-      scannerName,
-    }
-  } catch (err: unknown) {
-    // Try to extract results from stdout/stderr on non-zero exit
-    const output = err && typeof err === "object"
-      ? ((err as any).stdout || (err as any).stderr || "")
-      : ""
-
-    if (output) {
-      try {
-        const jsonStart = output.indexOf("{")
-        const jsonEnd = output.lastIndexOf("}")
-        const jsonStr = jsonStart >= 0 && jsonEnd >= 0 ? output.slice(jsonStart, jsonEnd + 1) : output
-        const parsed: SemgrepOutput = JSON.parse(jsonStr)
-        if (parsed.results?.length) {
-          const vulnerabilities = parsed.results.map((r, i) => ({
-            id: `SG-${i + 1}`,
-            name: r.extra.message.split(".")[0] || "Semgrep finding",
-            severity: severityMap(r.extra.severity),
-            location: `${r.path}:${r.start.line}`,
-            cve: r.extra.metadata.cwe?.[0] || "CWE-Info",
-            description: r.extra.message,
-            recommendation: r.extra.metadata.references?.[0]
-              ? `参考: ${r.extra.metadata.references[0]}`
-              : "Review and fix the identified issue",
-            code: r.extra.lines || undefined,
-            source: scannerName,
-          }))
-          return { vulnerabilities, totalChecks: vulnerabilities.length + 10, errors: [], scannerName }
-        }
-      } catch { /* ignore */ }
-    }
-
+  if (!stdout) {
     return {
       vulnerabilities: [],
       totalChecks: 0,
-      errors: [`Semgrep scan failed: ${err instanceof Error ? err.message : String(err)}`],
+      errors: [existsSync(LOCAL_RULES)
+        ? "Semgrep: both local rules and remote registry failed"
+        : "Semgrep rules not found at " + LOCAL_RULES + " and remote registry unavailable"],
       scannerName,
     }
+  }
+  // 解析 semgrep JSON 输出
+  const jsonStart = stdout.indexOf("{")
+  const jsonEnd = stdout.lastIndexOf("}")
+  const jsonStr = jsonStart >= 0 && jsonEnd >= 0 ? stdout.slice(jsonStart, jsonEnd + 1) : stdout
+  const parsed: SemgrepOutput = JSON.parse(jsonStr)
+
+  const vulnerabilities: Vulnerability[] = parsed.results.map((r, i) => ({
+    id: `SG-${i + 1}`,
+    name: r.extra.message.split(".")[0] || "Semgrep finding",
+    severity: severityMap(r.extra.severity),
+    location: `${r.path}:${r.start.line}`,
+    cve: r.extra.metadata.cwe?.[0] || "CWE-Info",
+    description: r.extra.message,
+    recommendation: r.extra.metadata.references?.[0]
+      ? `参考: ${r.extra.metadata.references[0]}`
+      : "Review and fix the identified issue",
+    code: r.extra.lines || undefined,
+    source: scannerName,
+  }))
+
+  return {
+    vulnerabilities,
+    totalChecks: parsed.paths?.scanned?.length || vulnerabilities.length + 10,
+    errors: [],
+    scannerName,
   }
 }

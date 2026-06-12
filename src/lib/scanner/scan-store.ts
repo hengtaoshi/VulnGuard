@@ -30,6 +30,9 @@ export interface ScanSession {
   }
 
   error?: string
+  totalFiles?: number
+  skippedFiles?: number
+  projectName?: string
   /** Structured scan activity log for debugging */
   logs?: LogEntry[]
   createdAt: string
@@ -53,7 +56,7 @@ function generateId(): string {
   return `scan-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
 }
 
-export function createSession(_type: "url" | "source", target: string): ScanSession {
+export function createSession(_type: "url" | "source", target: string, extra?: { totalFiles?: number; skippedFiles?: number; projectName?: string }): ScanSession {
   ensureDir()
   const session: ScanSession = {
     id: generateId(),
@@ -64,6 +67,9 @@ export function createSession(_type: "url" | "source", target: string): ScanSess
     totalChecks: 0,
     summary: { critical: 0, high: 0, medium: 0, low: 0, passed: 0 },
     vulnerabilities: [],
+    totalFiles: extra?.totalFiles,
+    skippedFiles: extra?.skippedFiles,
+    projectName: extra?.projectName || undefined,
     createdAt: new Date().toISOString(),
   }
   writeFileSync(filePath(session.id), JSON.stringify(session, null, 2), "utf-8")
@@ -121,11 +127,33 @@ export function clearSessions() {
   }
 }
 
+/**
+ * Sanitize target path for display — avoid leaking server absolute paths to the frontend.
+ * Uses the UPLOAD_BASE const defined below (for cleanupUploadDir).
+ */
+function safeTarget(session: ScanSession): string {
+  // If a project name is available, use it (user-friendly)
+  if (session.projectName) return session.projectName
+
+  // If the target is an absolute upload path, show only the last segment
+  try {
+    const normalized = normalize(session.target)
+    if (normalized.startsWith(UPLOAD_BASE)) {
+      const rel = normalized.slice(UPLOAD_BASE.length).replace(/^[/\\]+/, "")
+      return rel ? `uploads/${rel}` : session.target
+    }
+  } catch {
+    // ignore normalization errors
+  }
+
+  return session.target
+}
+
 export function toScanSummary(session: ScanSession): ScanSummary {
   const hasResults = session.summary.critical > 0 || session.summary.high > 0 || session.summary.medium > 0 || session.summary.low > 0
   return {
     id: session.id,
-    target: session.target,
+    target: safeTarget(session),
     type: session.type,
     status: session.status,
     risk: session.riskScore || "—",
@@ -138,7 +166,7 @@ export function toScanSummary(session: ScanSession): ScanSummary {
 export function toScanDetail(session: ScanSession): ScanDetail {
   return {
     id: session.id,
-    target: session.target,
+    target: safeTarget(session),
     status: session.status,
     riskScore: session.riskScore,
     totalChecks: session.totalChecks,
@@ -150,6 +178,9 @@ export function toScanDetail(session: ScanSession): ScanDetail {
     aiAggregation: session.aiAggregation,
     orchestratorPlan: session.orchestratorPlan,
     logs: session.logs,
+    totalFiles: session.totalFiles,
+    skippedFiles: session.skippedFiles,
+    projectName: session.projectName,
     createdAt: session.createdAt,
   }
 }

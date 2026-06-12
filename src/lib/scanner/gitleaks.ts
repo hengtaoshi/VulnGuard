@@ -45,7 +45,7 @@ export async function runGitleaksScan(targetPath: string): Promise<ScanResult> {
   try {
     const absolutePath = resolve(targetPath)
     const { stdout } = await execAsync(
-      `"${GITLEAKS_PATH}" detect --source="${absolutePath}" --no-git --no-banner --report-format=json --report-path=- --exclude="node_modules|\\.git|\\.next|dist|build|tools|vendor|\\.venv|venv|__pycache__|\\.cache|coverage|\\.trivy-cache|\\.dc-report|\\.scans"`,
+      `"${GITLEAKS_PATH}" detect --source="${absolutePath}" --no-git --no-banner --report-format=json --report-path=- --max-target-megabytes=200`,
       { timeout: 60000, maxBuffer: 10 * 1024 * 1024 },
     )
     rawOutput = stdout.trim()

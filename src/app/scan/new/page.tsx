@@ -20,18 +20,26 @@ export default function NewScanPage() {
   const [engine, setEngine] = useState<ScannerEngine>("ai")
   const [dragging, setDragging] = useState(false)
   const [uploadProgress, setUploadProgress] = useState("")
-  const [uploadedInfo, setUploadedInfo] = useState<{ path: string; fileCount: number } | null>(null)
+  const [uploadedInfo, setUploadedInfo] = useState<{ path: string; displayPath?: string; fileCount: number } | null>(null)
+  const [fileFilterInfo, setFileFilterInfo] = useState<{ total: number; skipped: number } | null>(null)
   const dropRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const handleScan = useCallback(async (scanTarget: string) => {
+  const handleScan = useCallback(async (scanTarget: string, projectName?: string) => {
     setState("scanning")
     setError("")
     try {
       const res = await fetch("/api/scans", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ target: scanTarget, mode: "source", engine }),
+        body: JSON.stringify({
+          target: scanTarget,
+          mode: "source",
+          engine,
+          projectName: projectName,
+          totalFiles: fileFilterInfo?.total,
+          skippedFiles: fileFilterInfo?.skipped,
+        }),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
@@ -45,7 +53,7 @@ export default function NewScanPage() {
     }
   }, [engine, router])
 
-  const uploadFolder = useCallback(async (files: File[]) => {
+  const uploadFolder = useCallback(async (files: File[], projectName?: string) => {
     setState("uploading")
     setError("")
     setUploadProgress(`正在读取 ${files.length} 个文件...`)
@@ -65,7 +73,10 @@ export default function NewScanPage() {
       }
 
       setUploadProgress(`正在上传 ${files.length} 个文件到服务器...`)
-      const res = await fetch("/api/upload", { method: "POST", body: formData })
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      })
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
@@ -73,11 +84,11 @@ export default function NewScanPage() {
       }
 
       const data = await res.json()
-      setUploadedInfo({ path: data.path, fileCount: data.fileCount })
+      setUploadedInfo({ path: data.path, displayPath: data.displayPath, fileCount: data.fileCount })
       setTarget(data.path)
 
       // Auto-start scan after upload
-      await handleScan(data.path)
+      await handleScan(data.path, projectName)
     } catch (err) {
       setState("error")
       setError(err instanceof Error ? err.message : "上传失败")
@@ -143,11 +154,17 @@ export default function NewScanPage() {
       return
     }
 
+    // 从文件路径中提取项目名（webkitRelativePath 第一段 = 用户选择的文件夹名）
+    const firstFile = allFiles.find(f => (f as any).webkitRelativePath)
+    const projectName = firstFile
+      ? ((f: any) => f.webkitRelativePath.split("/")[0] || "")(firstFile)
+      : ""
     const skipped = allFiles.length - filtered.length
-    const msg = skipped > 0 ? `（已跳过 ${skipped} 个 node_modules 等非源码文件）` : ""
-    setUploadProgress(`准备上传 ${filtered.length} 个文件${msg}`)
+    setFileFilterInfo({ total: allFiles.length, skipped })
+    const msg = skipped > 0 ? `（已跳过 ${skipped} 个非源码文件，实际扫描 ${filtered.length} 个文件）` : ""
+    setUploadProgress(msg)
 
-    await uploadFolder(filtered)
+    await uploadFolder(filtered, projectName)
   }, [uploadFolder])
 
   const handleDrop = useCallback(async (e: React.DragEvent) => {
@@ -313,7 +330,7 @@ export default function NewScanPage() {
                     <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">
                       已上传 {uploadedInfo.fileCount} 个文件
                     </p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{uploadedInfo.path}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{uploadedInfo.displayPath || uploadedInfo.path}</p>
                   </div>
                 </div>
                 <div className="flex gap-2">
