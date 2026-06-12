@@ -5,8 +5,6 @@ import { updateSession } from "./scan-store"
 import { addLog } from "./scan-log"
 import { analyzeTarget } from "./target-analyzer"
 import type { TargetAnalysis } from "./target-analyzer"
-import { createOrchestratorPlan, createFallbackPlan } from "./orchestrator"
-import type { OrchestratorPlan } from "./orchestrator"
 import { aggregateScanResults } from "./ai-aggregator"
 import { isLlmAvailable } from "./llm-client"
 import { filterIgnored, getAllIgnoreRules } from "../ignore-rules"
@@ -469,30 +467,14 @@ export async function runCompositeScan(
     }
   }
 
-  let orchestratorPlan: OrchestratorPlan | null = null
   let selectedScanners: string[] = []
 
-  // AI 编排：仅对 "ai" 引擎且 DeepSeek 可用时
-  if (engine === "ai" && isLlmAvailable()) {
-    if (sessionId) addLog(sessionId, "orchestrator", "info", "🤖 AI orchestrator analyzing target...")
-    orchestratorPlan = await createOrchestratorPlan(targetAnalysis, engine, allScanners, availableNames)
-  }
-
-  if (orchestratorPlan) {
-    selectedScanners = orchestratorPlan.selectedScanners
-    if (sessionId) {
-      addLog(sessionId, "orchestrator", "info",
-        `🤖 AI orchestrator: selected ${selectedScanners.length} scanners: ${selectedScanners.join(", ")}`,
-        `Priority: ${orchestratorPlan.scanPriority} | AI Review: ${orchestratorPlan.aiReview} | ${orchestratorPlan.reasoning.slice(0, 200)}`)
-      updateSession(sessionId, { orchestratorPlan })
-    }
-  } else {
-    // 规则回退（AI 不可用或 engine === "all"）
-    selectedScanners = selectScannersByRules(targetAnalysis, engine, availableNames)
-    if (sessionId) {
-      addLog(sessionId, "system", "info",
-        `Rules selected ${selectedScanners.length} scanners: ${selectedScanners.join(", ")}`)
-    }
+  // 扫描器选择：始终使用规则引擎（确定性），不用 AI
+  // AI 仅在 Phase 4 聚合阶段用于跨扫描器关联和假阳性检测
+  selectedScanners = selectScannersByRules(targetAnalysis, engine, availableNames)
+  if (sessionId) {
+    addLog(sessionId, "system", "info",
+      `Rules selected ${selectedScanners.length} scanners: ${selectedScanners.join(", ")}`)
   }
 
   const selectedScannerObjects = selectedScanners
@@ -500,7 +482,7 @@ export async function runCompositeScan(
     .filter((s): s is Scanner => s !== undefined)
 
   const statuses = makeScannerStatuses(selectedScannerObjects)
-  setProgress(0, `📋 ${orchestratorPlan ? "AI" : "Rules"} matched: ${selectedScanners.length} scanners selected`, statuses)
+  setProgress(0, `📋 Rules matched: ${selectedScanners.length} scanners selected`, statuses)
 
   // ── Phase 2: 执行扫描器 ─────────────────────────────────────────────
   const result = await executeScanners(allScanners, selectedScanners, targetPath, sessionId)

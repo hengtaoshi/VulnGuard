@@ -29,7 +29,7 @@ function resolveBin(name: string, exeName?: string): string | null {
   const localPath = join(TOOLS_BIN, exeName || name)
   try {
     const { execSync } = require("child_process") as typeof import("child_process")
-    execSync(`"${localPath}" --version 2>&1`, { stdio: "pipe", timeout: 5000 })
+    execSync(`"${localPath}" --version 2>&1`, { stdio: "pipe", timeout: 15000 })
     return localPath
   } catch {
     // Fallback: check PATH

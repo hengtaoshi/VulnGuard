@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react"
+import { createContext, useContext, useState, useCallback, type ReactNode } from "react"
 import { zh, type TranslationDict } from "./zh"
 import { en } from "./en"
 
@@ -44,13 +44,7 @@ function getInitialLocale(): Locale {
 }
 
 export function I18nProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>("zh")
-  const [ready, setReady] = useState(false)
-
-  useEffect(() => {
-    setLocaleState(getInitialLocale())
-    setReady(true)
-  }, [])
+  const [locale, setLocaleState] = useState<Locale>(getInitialLocale())
 
   const setLocale = useCallback((next: Locale) => {
     setLocaleState(next)
@@ -67,10 +61,6 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     },
     [locale],
   )
-
-  if (!ready) {
-    return <div className="min-h-screen bg-background" />
-  }
 
   return (
     <I18nContext.Provider value={{ locale, t, setLocale }}>
