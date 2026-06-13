@@ -108,17 +108,24 @@ npm install
 npm run setup
 ```
 
-### Configuration
+### Configuration (Required)
 
-Copy `.env.example` to `.env.local` and configure:
+> ⚠️ **You must configure at least `DEEPSEEK_API_KEY`** for AI orchestration to work.
+> Get one for free at [platform.deepseek.com](https://platform.deepseek.com/) → API Keys.
 
 ```bash
+# 1. Copy the template
 cp .env.example .env.local
+
+# 2. Edit .env.local and replace the placeholder
+#    DEEPSEEK_API_KEY=your_deepseek_api_key_here
+#    ↓
+#    DEEPSEEK_API_KEY=sk-your_actual_key_here
 ```
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `DEEPSEEK_API_KEY` | ✅ | DeepSeek API key for AI orchestration & aggregation |
+| `DEEPSEEK_API_KEY` | ✅ | DeepSeek API key ([get one here](https://platform.deepseek.com/)) |
 | `DEEPSEEK_BASE_URL` | ❌ | Custom API endpoint (default: `https://api.deepseek.com`) |
 | `DEEPSEEK_MODEL` | ❌ | Model name (default: `deepseek-chat`) |
 | `DATABASE_URL` | ❌ | PostgreSQL connection (optional, for scan persistence) |
@@ -209,8 +216,10 @@ cd VulnGuard
 npm install
 npm run setup
 
-# 配置 API Key（编辑 .env.local）
-# DEEPSEEK_API_KEY=sk-xxxxx
+# 配置 API Key
+cp .env.example .env.local
+# 编辑 .env.local，把 DEEPSEEK_API_KEY 替换为你的真实密钥
+# 申请地址: https://platform.deepseek.com/
 
 # 启动
 npm run dev
