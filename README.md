@@ -115,6 +115,13 @@
       <em>📄 安全报告 — 漏洞详情、AI 聚合分析、PDF 导出</em>
     </td>
   </tr>
+  <tr>
+    <td colspan="2" align="center">
+      <img src="https://raw.githubusercontent.com/hengtaoshi/VulnGuard/main/public/screenshots/settings.png" alt="系统设置" width="80%">
+      <br>
+      <em>⚙️ 系统设置 — 扫描时长、引擎、并行数、AI聚合、数据保留等真实可配置项</em>
+    </td>
+  </tr>
 </table>
 
 ## Tech Stack
