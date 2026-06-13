@@ -121,7 +121,7 @@ export async function runDependencyCheckScan(targetPath: string): Promise<ScanRe
     const noupdateFlag = hasNvdCache ? "--noupdate" : ""
     const nvdApiKey = process.env.NVD_API_KEY || ""
     const nvdFlag = nvdApiKey ? `--nvdApiKey ${nvdApiKey}` : ""
-    const cmd = `"${dcPath}" ${noupdateFlag} --disableNodeAudit --disableRetireJS --disableOssIndex --disableAssembly --data "${DC_DATA_DIR}" --scan "${targetPath.replace(/\\/g, "/")}" --format JSON --out "${DC_OUTPUT_DIR}" --project VulnGuard ${nvdFlag}`
+    const cmd = `"${dcPath}" ${noupdateFlag} --disableNodeAudit --disableRetireJS --disableOssIndex --disableAssembly --disableCentral --exclude "**/tools/**" --data "${DC_DATA_DIR}" --scan "${targetPath.replace(/\\/g, "/")}" --format JSON --out "${DC_OUTPUT_DIR}" --project VulnGuard ${nvdFlag}`
     const proxy = process.env.HTTP_PROXY || process.env.HTTPS_PROXY || ""
     const javaOpts = proxy
       ? `-Dhttp.proxyHost=${new URL(proxy).hostname} -Dhttp.proxyPort=${new URL(proxy).port} -Dhttps.proxyHost=${new URL(proxy).hostname} -Dhttps.proxyPort=${new URL(proxy).port}`

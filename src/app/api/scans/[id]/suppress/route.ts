@@ -10,12 +10,13 @@ import { requireAuth } from "@/lib/api/auth"
  */
 export async function POST(
   request: Request,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
+  const { id } = await params
   const auth = requireAuth(request)
   if (auth) return auth
 
-  const session = getSession(params.id)
+  const session = getSession(id)
   if (!session) {
     return NextResponse.json({ error: "Scan not found" }, { status: 404 })
   }
@@ -34,7 +35,7 @@ export async function POST(
       return NextResponse.json({ error: "Missing cve or id in request body" }, { status: 400 })
     }
 
-    const rules = addIgnoreRule(pattern, comment || `Marked false positive in scan ${params.id}`)
+    const rules = addIgnoreRule(pattern, comment || `Marked false positive in scan ${id}`)
 
     return NextResponse.json({
       success: true,

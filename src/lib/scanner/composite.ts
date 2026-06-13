@@ -8,6 +8,7 @@ import type { TargetAnalysis } from "./target-analyzer"
 import { aggregateScanResults } from "./ai-aggregator"
 import { isLlmAvailable } from "./llm-client"
 import { filterIgnored, getAllIgnoreRules } from "../ignore-rules"
+import { translateVulnerabilities } from "./chinese-descriptions"
 import { execSync } from "child_process"
 import { join } from "path"
 import { writeFileSync, existsSync, mkdirSync } from "fs"
@@ -375,7 +376,12 @@ async function executeScanners(
       }
     }
   }
-  const vulnerabilities = Array.from(vulnerabilityMap.values())
+  let vulnerabilities = Array.from(vulnerabilityMap.values())
+
+  // ── 中文翻译 ────────────────────────────────────────────────────────
+  // 将漏洞描述翻译为中文，保留未匹配规则的原文
+  vulnerabilities = translateVulnerabilities(vulnerabilities)
+
   const totalChecks = allResults.reduce((sum, r) => sum + r.totalChecks, 0)
 
   const finalScannerResults = allResults.map(result => ({

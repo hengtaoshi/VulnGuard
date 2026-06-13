@@ -12,12 +12,11 @@ import { requireAuth } from "@/lib/api/auth"
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
+  const { id } = await params
   const auth = requireAuth(request)
   if (auth) return auth
-
-  const id = params.id
   if (!id) {
     return new Response("Missing scan ID", { status: 400 })
   }

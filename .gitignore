@@ -1,39 +1,59 @@
+# ─── 依赖 ───────────────────────────────────────────────────────────
 node_modules/
+
+# ─── 构建输出 ────────────────────────────────────────────────────────
 .next/
-*.local
-.env
-.env.local
-.DS_Store
+dist/
+build/
 *.tsbuildinfo
 next-env.d.ts
-dist/
-.scans/
 
-.trivy-cache/
-tools/bin/*.exe
-tools/wordlists/
-__pycache__/
-*.pyc
+# ─── 运行时数据 ──────────────────────────────────────────────────────
+.scans/
+.scans/
 .dc-report/
+.trivy-cache/
+.nvd-cache/
 data/uploads/
+data/
 scan-payload.json
 scan-test.json
-.reasonix/
-.superpowers/
 test-report.html
 
-# Dependency-Check NVD 缓存数据库（运行时下载生成）
-tools/dependency-check/data/
-.nvd-cache/
-vulnguard-v*/
-.scans/
-.dc-report/
-data/uploads/
-
-# Scanner binaries (downloaded by npm run setup)
+# ─── 扫描器二进制 & 工具链 ───────────────────────────────────────────
 tools/bin/*.exe
 tools/bin/codeql/
 tools/dependency-check/
+tools/dependency-check/data/
 tools/codeql-win64.zip
 tools/dependency-check.zip
 tools/codeql-queries/
+tools/wordlists/
+
+# ─── 环境变量 ────────────────────────────────────────────────────────
+.env
+.env.local
+*.local
+
+# ─── 个人 / IDE 配置 ────────────────────────────────────────────────
+.claude/
+.codegraph/
+.reasonix/
+.superpowers/
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ─── 生成报告与文档 ──────────────────────────────────────────────────
+报告/
+VERIFICATION_REPORT.md
+
+# ─── 个人工作流 ──────────────────────────────────────────────────────
+dev-workflow.md
+
+# ─── 系统 ────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+__pycache__/
+*.pyc

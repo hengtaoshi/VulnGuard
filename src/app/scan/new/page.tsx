@@ -151,6 +151,7 @@ export default function NewScanPage() {
              !/\/vendor\//.test(path) &&
              !/\/build\//.test(path) &&
              !/\/\.trivy-cache\//.test(path) &&
+             !/\/\.nvd-cache\//.test(path) &&
              !/\/data\/uploads\//.test(path) &&
              !/\/\.scans\//.test(path) &&
              !/\/\.dc-report\//.test(path) &&

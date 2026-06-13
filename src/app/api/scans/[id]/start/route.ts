@@ -6,12 +6,13 @@ import { requireAuth } from "@/lib/api/auth"
 
 export async function POST(
   request: Request,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
+  const { id } = await params
   const auth = requireAuth(request)
   if (auth) return auth
 
-  const session = getSession(params.id)
+  const session = getSession(id)
   if (!session) {
     return NextResponse.json({ error: "Scan not found" }, { status: 404 })
   }
@@ -21,14 +22,15 @@ export async function POST(
   }
 
   // Mark as scanning immediately
-  updateSession(params.id, { status: "scanning" })
+  updateSession(id, { status: "scanning" })
 
   const target = session.target
   const engine: ScannerEngine = session.scannerEngine || "ai"
 
-  // Run composite scan in the background (don't await)
-  runCompositeScan(target, "source", params.id, engine)
-    .then(result => {
+  // Run composite scan in the background (setTimeout 确保 Next.js 不等待)
+  setTimeout(() => {
+    runCompositeScan(target, "source", id, engine)
+      .then(result => {
       const { vulnerabilities, totalChecks, scannerResults } = result
       const critical = vulnerabilities.filter(v => v.severity === "Critical").length
       const high = vulnerabilities.filter(v => v.severity === "High").length
@@ -42,7 +44,7 @@ export async function POST(
       else if (high > 0) riskScore = "C"
       else if (medium > 3) riskScore = "B"
 
-      updateSession(params.id, {
+      updateSession(id, {
         status: "completed",
         riskScore,
         totalChecks,
@@ -54,9 +56,10 @@ export async function POST(
       cleanupUploadDir(target)
     })
     .catch(scanErr => {
-      updateSession(params.id, { status: "failed", error: (scanErr as Error).message })
+      updateSession(id, { status: "failed", error: (scanErr as Error).message })
       cleanupUploadDir(target)
     })
+  }, 0)
 
   return NextResponse.json({ status: "scanning" })
 }
