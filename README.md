@@ -85,46 +85,7 @@
       </ul>
     </td>
   </tr>
-  <tr>
-    <td>
-      <h3>🚫 误报管理</h3>
-      <ul>
-        <li><code>.vulnguard-ignore</code> 文件（类似 .gitignore 语法，可提交仓库）</li>
-        <li>Web UI 标记误报，持久化保存</li>
-        <li>AI 假阳性检测 — DeepSeek 自动识别误报并标注原因</li>
-        <li>可达性分析 — 判断依赖是否被实际调用，降低 SCA 误报</li>
-      </ul>
-    </td>
-    <td>
-      <h3>🌐 国际化</h3>
-      <ul>
-        <li>中英文双语界面，一键切换</li>
-        <li>漏洞描述中文自动翻译 + 中文修复建议</li>
-        <li>所有 UI 字符串完整 i18n</li>
-      </ul>
-    </td>
-  </tr>
-  <tr>
-    <td>
-      <h3>⚡ 开发体验</h3>
-      <ul>
-        <li>拖拽上传源码目录，自动过滤非源码文件（node_modules、.git等）</li>
-        <li>实时进度推送（SSE + 轮询降级）</li>
-        <li>Turbopack 极速热更新</li>
-        <li>一键安装 — <code>npm run setup</code> 自动下载所有扫描器二进制</li>
-        <li>Release 构建 — <code>npm run release</code> 全量打包</li>
-      </ul>
-    </td>
-    <td>
-      <h3>⚙️ 系统配置</h3>
-      <ul>
-        <li>扫描时长上限设置</li>
-        <li>自动报告生成开关</li>
-        <li>API 认证令牌保护</li>
-        <li>Docker 一键部署</li>
-      </ul>
-    </td>
-  </tr>
+
 </table>
 
 ## Tech Stack
