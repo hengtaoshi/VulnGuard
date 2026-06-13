@@ -93,24 +93,24 @@
 <table>
   <tr>
     <td width="50%" align="center">
-      <img src="/screenshots/dashboard.png" alt="安全仪表盘" width="100%">
+      <img src="https://raw.githubusercontent.com/hengtaoshi/VulnGuard/main/public/screenshots/dashboard.png" alt="安全仪表盘" width="100%">
       <br>
       <em>📊 安全仪表盘 — 趋势图表、风险概览、最近扫描</em>
     </td>
     <td width="50%" align="center">
-      <img src="/screenshots/new-scan.png" alt="新建扫描" width="100%">
+      <img src="https://raw.githubusercontent.com/hengtaoshi/VulnGuard/main/public/screenshots/new-scan.png" alt="新建扫描" width="100%">
       <br>
       <em>🎯 新建扫描 — 拖拽上传、选择扫描模块</em>
     </td>
   </tr>
   <tr>
     <td width="50%" align="center">
-      <img src="/screenshots/scan-history.png" alt="扫描历史" width="100%">
+      <img src="https://raw.githubusercontent.com/hengtaoshi/VulnGuard/main/public/screenshots/scan-history.png" alt="扫描历史" width="100%">
       <br>
       <em>📋 扫描历史 — 搜索筛选、基线对比、详情查看</em>
     </td>
     <td width="50%" align="center">
-      <img src="/screenshots/reports.png" alt="安全报告" width="100%">
+      <img src="https://raw.githubusercontent.com/hengtaoshi/VulnGuard/main/public/screenshots/reports.png" alt="安全报告" width="100%">
       <br>
       <em>📄 安全报告 — 漏洞详情、AI 聚合分析、PDF 导出</em>
     </td>
