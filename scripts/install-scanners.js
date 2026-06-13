@@ -15,7 +15,7 @@
  */
 
 const { execSync } = require("child_process")
-const { existsSync, mkdirSync, createWriteStream, unlinkSync, readFileSync } = require("fs")
+const { existsSync, mkdirSync, createWriteStream, unlinkSync, readFileSync, rmSync } = require("fs")
 const { join } = require("path")
 const https = require("https")
 const crypto = require("crypto")
@@ -318,20 +318,30 @@ async function main() {
     }
   }
 
-  // ── CodeQL query packs ─────────────────────────────────────────────────
-  const codeqlPackDir = join(homedir(), ".codeql", "packages")
-  if (existsSync(codeqlBin) && !existsSync(join(codeqlPackDir, "codeql", "javascript-queries"))) {
-    log("CodeQL packs", "downloading query packs (~100 MB)...")
-    for (const pack of ["codeql/javascript-queries", "codeql/python-queries", "codeql/java-queries", "codeql/go-queries", "codeql/cpp-queries", "codeql/csharp-queries", "codeql/swift-queries", "codeql/ruby-queries"]) {
-      try {
-        execSync(`"${codeqlBin}" pack download ${pack}`, { timeout: 120000, stdio: "pipe" })
-      } catch {
-        warn(`CodeQL: failed to download ${pack} — will use --download at scan time`)
+  // ── CodeQL query packs (shallow clone from github/codeql) ──────────────
+  const codeqlQueriesDir = join(TOOLS_DIR, "codeql-queries")
+  const codeqlJsSuite = join(codeqlQueriesDir, "javascript", "ql", "src", "codeql-suites", "javascript-security-extended.qls")
+  if (existsSync(codeqlBin) && !existsSync(codeqlJsSuite)) {
+    log("CodeQL packs", "cloning github/codeql (shallow sparse, ~50 MB)...")
+    try {
+      if (existsSync(codeqlQueriesDir)) {
+        try { rmSync(codeqlQueriesDir, { recursive: true, force: true }) } catch {}
       }
+      execSync(
+        `git clone --depth 1 --filter=blob:none --sparse "https://github.com/github/codeql.git" "${codeqlQueriesDir}"`,
+        { timeout: 120000, stdio: "pipe" },
+      )
+      execSync(
+        `git -C "${codeqlQueriesDir}" sparse-checkout set javascript/ql/src javascript/ql/lib python/ql/src python/ql/lib cpp/ql/src cpp/ql/lib java/ql/src java/ql/lib go/ql/src go/ql/lib csharp/ql/src csharp/ql/lib ruby/ql/src ruby/ql/lib swift/ql/src swift/ql/lib config`,
+        { timeout: 30000, stdio: "pipe" },
+      )
+      execSync(`git -C "${codeqlQueriesDir}" checkout`, { timeout: 30000, stdio: "pipe" })
+      log("CodeQL packs", "cloned successfully")
+    } catch (err) {
+      warn(`CodeQL: failed to clone query repo — ${err.message.slice(0, 80)}`)
     }
-    if (existsSync(join(codeqlPackDir, "codeql", "javascript-queries"))) {
-      log("CodeQL packs", "downloaded")
-    }
+  } else if (existsSync(codeqlJsSuite)) {
+    log("CodeQL packs", "already available (local repo)")
   }
 
   // ── 4. Dependency-Check ─────────────────────────────────────────────────

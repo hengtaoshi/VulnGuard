@@ -22,18 +22,23 @@ import type { ScanResult } from "./types"
 
 const CODEQL_DIR = join(process.cwd(), "tools", "bin", "codeql", "codeql")
 
-// 不同场景的查询包 — 用 codeql pack download 安装
-const LANGUAGE_QUERIES: Record<string, string[]> = {
-  javascript: ["codeql/javascript-queries"],
-  typescript: ["codeql/javascript-queries"],
-  python: ["codeql/python-queries"],
-  java: ["codeql/java-queries"],
-  go: ["codeql/go-queries"],
-  csharp: ["codeql/csharp-queries"],
-  c: ["codeql/cpp-queries"],
-  cpp: ["codeql/cpp-queries"],
-  swift: ["codeql/swift-queries"],
-  ruby: ["codeql/ruby-queries"],
+// 预下载到 tools/codeql-queries/ 的查询文件（浅克隆 github/codeql）
+// 避免运行时从 ghcr.io 下载（国内网络不可达）
+const CODEQL_REPO = join(process.cwd(), "tools", "codeql-queries")
+const QL_SUITE = (lang: string) =>
+  join(CODEQL_REPO, lang, "ql", "src", "codeql-suites", `${lang}-security-extended.qls`)
+
+const LANGUAGE_QUERY_PATH: Record<string, string> = {
+  javascript: QL_SUITE("javascript"),
+  typescript: QL_SUITE("javascript"),
+  python: QL_SUITE("python"),
+  java: QL_SUITE("java"),
+  go: QL_SUITE("go"),
+  csharp: QL_SUITE("csharp"),
+  c: QL_SUITE("cpp"),
+  cpp: QL_SUITE("cpp"),
+  swift: QL_SUITE("swift"),
+  ruby: QL_SUITE("ruby"),
 }
 
 const CODEQL_BIN = join(CODEQL_DIR, "codeql.exe")
@@ -54,40 +59,6 @@ async function getCodeqlVersion(): Promise<string | null> {
     return match?.[1] || "unknown"
   } catch {
     return null
-  }
-}
-
-/**
- * 确保 CodeQL 查询包已安装
- */
-async function ensurePacks(queries: string[]): Promise<boolean> {
-  try {
-    const { stdout } = await execAsync(
-      `"${CODEQL_BIN}" pack list --format=json`,
-      { timeout: 15000 },
-    )
-    const installed: { name: string }[] = JSON.parse(stdout)
-    const installedNames = new Set(installed.map(p => p.name))
-    const missing = queries.filter(q => !installedNames.has(q))
-
-    if (missing.length === 0) return true
-
-    // 下载缺失的包
-    for (const pack of missing) {
-      try {
-        await execAsync(
-          `"${CODEQL_BIN}" pack download ${pack}`,
-          { timeout: 120000 },
-        )
-      } catch {
-        console.warn(`[codeql] Failed to download pack: ${pack}`)
-        return false
-      }
-    }
-    return true
-  } catch {
-    // codeql pack list 不可用，尝试直接 resolve queries
-    return true
   }
 }
 
@@ -263,34 +234,40 @@ export async function runCodeqlScan(targetPath: string): Promise<ScanResult> {
 
     // 去重处理的语言（JS/TS 共用 javascript 查询）
     const processedLangs = new Set<string>()
-    for (const lang of languages) {
-      const qlLang = LANGUAGE_QUERIES[lang] ? lang : null
-      if (!qlLang || processedLangs.has(qlLang)) continue
-      processedLangs.add(qlLang)
+    if (!existsSync(CODEQL_REPO)) {
+      errors.push("CodeQL: query repository not found at tools/codeql-queries (run git clone --depth 1 --sparse https://github.com/github/codeql.git tools/codeql-queries)")
+    }
 
-      const queries = LANGUAGE_QUERIES[qlLang]
-      if (!queries || queries.length === 0) continue
+    for (const lang of languages) {
+      const qlLang = LANGUAGE_QUERY_PATH[lang] ? lang : null
+      if (!qlLang || processedLangs.has(qlLang)) continue
+
+      const suitePath = LANGUAGE_QUERY_PATH[qlLang]
+      if (!suitePath || !existsSync(suitePath)) {
+        errors.push(`CodeQL ${qlLang}: query suite not found at ${suitePath}`)
+        continue
+      }
+      processedLangs.add(qlLang)
 
       // 创建数据库
       try {
         await execAsync(
           `"${CODEQL_BIN}" database create "${dbDir}-${qlLang}" --language=${qlLang} --source-root="${targetPath}" --overwrite`,
-          { timeout: 300000 }, // 5 分钟超时
+          { timeout: 300000 },
         )
       } catch (err) {
         errors.push(`CodeQL ${qlLang}: database creation failed: ${(err as Error).message}`)
         continue
       }
 
-      // 运行查询
+      // 运行查询 — 使用本地 .qls 文件 + --search-path 指向查询仓库
       const outputFile = join(resultDir, `${qlLang}.sarif`)
       try {
         await execAsync(
-          `"${CODEQL_BIN}" database analyze "${dbDir}-${qlLang}" --format=sarif-latest --output="${outputFile}" ${queries.join(" ")}`,
-          { timeout: 600000 }, // 10 分钟超时
+          `"${CODEQL_BIN}" database analyze "${dbDir}-${qlLang}" --search-path="${CODEQL_REPO}" --format=sarif-latest --output="${outputFile}" "${suitePath}"`,
+          { timeout: 600000 },
         )
       } catch (err) {
-        // analyze 可能返回非 0 但仍有部分结果
         errors.push(`CodeQL ${qlLang}: analysis warning: ${(err as Error).message}`)
       }
 

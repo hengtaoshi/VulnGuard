@@ -8,7 +8,7 @@ const BIN_DIR = join(process.cwd(), "tools", "bin")
 const DC_BAT = join(BIN_DIR, "dependency-check.bat")
 const DC_SH = join(BIN_DIR, "dependency-check.sh")
 const DC_OUTPUT_DIR = join(process.cwd(), ".dc-report")
-const DC_DATA_DIR = join(process.cwd(), "..", ".nvd-cache", "data")
+const DC_DATA_DIR = join(process.cwd(), ".nvd-cache", "data")
 
 // ─── OWASP Dependency-Check JSON report types ─────────────────────────────
 
@@ -105,22 +105,30 @@ export async function runDependencyCheckScan(targetPath: string): Promise<ScanRe
     }
   }
 
-  // Prepare output directory
+  // Prepare output and data directories
   if (!existsSync(DC_OUTPUT_DIR)) {
     mkdirSync(DC_OUTPUT_DIR, { recursive: true })
   }
+  if (!existsSync(DC_DATA_DIR)) {
+    mkdirSync(DC_DATA_DIR, { recursive: true })
+  }
 
   try {
+    // 首次运行时 NVD 数据库尚未下载，去掉 --noupdate 让它下载
+    // 已有缓存时使用 --noupdate 避免每次扫描都重复下载
+    const hasNvdCache = existsSync(DC_DATA_DIR) &&
+      require("fs").readdirSync(DC_DATA_DIR).length > 0
+    const noupdateFlag = hasNvdCache ? "--noupdate" : ""
     const nvdApiKey = process.env.NVD_API_KEY || ""
     const nvdFlag = nvdApiKey ? `--nvdApiKey ${nvdApiKey}` : ""
-    const cmd = `"${dcPath}" --noupdate --disableNodeAudit --disableRetireJS --disableOssIndex --disableAssembly --data "${DC_DATA_DIR}" --scan "${targetPath.replace(/\\/g, "/")}" --format JSON --out "${DC_OUTPUT_DIR}" --project VulnGuard ${nvdFlag}`
+    const cmd = `"${dcPath}" ${noupdateFlag} --disableNodeAudit --disableRetireJS --disableOssIndex --disableAssembly --data "${DC_DATA_DIR}" --scan "${targetPath.replace(/\\/g, "/")}" --format JSON --out "${DC_OUTPUT_DIR}" --project VulnGuard ${nvdFlag}`
     const proxy = process.env.HTTP_PROXY || process.env.HTTPS_PROXY || ""
     const javaOpts = proxy
       ? `-Dhttp.proxyHost=${new URL(proxy).hostname} -Dhttp.proxyPort=${new URL(proxy).port} -Dhttps.proxyHost=${new URL(proxy).hostname} -Dhttps.proxyPort=${new URL(proxy).port}`
       : process.env.JAVA_OPTS || ""
     const env = { ...process.env, ...(javaOpts ? { JAVA_OPTS: javaOpts } : {}) }
     await execAsync(cmd, {
-      timeout: 300000, // 5 min (first run downloads DB)
+      timeout: 900000, // 15 min (首次下载 NVD 数据库可能很慢)
       maxBuffer: 50 * 1024 * 1024,
     })
 

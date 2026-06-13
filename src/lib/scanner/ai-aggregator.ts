@@ -127,7 +127,7 @@ function createFallbackReport(
   return {
     findings,
     falsePositivesRemoved: 0,
-    summary: `规则回退聚合：${vulnerabilities.length} 个发现（严重: ${critical}, 高危: ${high}, 中危: ${medium}, 低危: ${low}）`,
+    summary: `基础聚合：${vulnerabilities.length} 个发现（严重: ${critical}, 高危: ${high}, 中危: ${medium}, 低危: ${low}）`,
     priorityActions,
     target,
     createdAt: new Date().toISOString(),
@@ -183,6 +183,12 @@ export async function aggregateScanResults(
     return createFallbackReport(deterministicDedup(vulnerabilities), target)
   }
 
+  // 归一化 AI 返回字段 —— DeepSeek 有时把 summary 返回成对象而不是字符串
+  const aggSummary = typeof aiResult.summary === "string"
+    ? aiResult.summary
+    : `AI 聚合完成：${aiResult.findings.filter(f => !f.isFalsePositive).length} 个发现，${(aiResult.falsePositivesRemoved || 0) + aiResult.findings.filter(f => f.isFalsePositive).length} 个误报已移除`
+  const aggPriorityActions = Array.isArray(aiResult.priorityActions) ? aiResult.priorityActions : []
+
   // 整理 AI 分析的结果
   const aiFindings: AggregatedFinding[] = aiResult.findings
     .filter(f => !f.isFalsePositive)
@@ -234,8 +240,8 @@ export async function aggregateScanResults(
   return {
     findings: aiFindings,
     falsePositivesRemoved,
-    summary: aiResult.summary || `AI 聚合完成：${aiFindings.length} 个发现，${falsePositivesRemoved} 个误报已移除`,
-    priorityActions: aiResult.priorityActions || [],
+    summary: aggSummary,
+    priorityActions: aggPriorityActions,
     target,
     createdAt: new Date().toISOString(),
   }
