@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useRef } from "react"
+import { useState, useCallback, useRef, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -18,6 +18,19 @@ export default function NewScanPage() {
   const [target, setTarget] = useState("")
   const [error, setError] = useState("")
   const [engine, setEngine] = useState<ScannerEngine>("ai")
+  const [settingsLoaded, setSettingsLoaded] = useState(false)
+
+  useEffect(() => {
+    fetch("/api/settings")
+      .then(r => r.json())
+      .then(data => {
+        if (data.defaultEngine === "ai" || data.defaultEngine === "all") {
+          setEngine(data.defaultEngine)
+        }
+      })
+      .catch(() => {})
+      .finally(() => setSettingsLoaded(true))
+  }, [])
   const [dragging, setDragging] = useState(false)
   const [uploadProgress, setUploadProgress] = useState("")
   const [uploadedInfo, setUploadedInfo] = useState<{ path: string; displayPath?: string; fileCount: number } | null>(null)

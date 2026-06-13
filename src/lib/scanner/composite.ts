@@ -8,6 +8,7 @@ import type { TargetAnalysis } from "./target-analyzer"
 import { aggregateScanResults } from "./ai-aggregator"
 import { isLlmAvailable } from "./llm-client"
 import { filterIgnored, getAllIgnoreRules } from "../ignore-rules"
+import { getSettings } from "../settings-store"
 import { translateVulnerabilities } from "./chinese-descriptions"
 import { execSync } from "child_process"
 import { join } from "path"
@@ -298,7 +299,8 @@ async function executeScanners(
       }
     }, 5000)
 
-    const MAX_CONCURRENT = 5
+    const { concurrentScanners } = getSettings()
+    const MAX_CONCURRENT = concurrentScanners
 
     const runOneScanner = async (s: Scanner): Promise<void> => {
       if (sessionId) addLog(sessionId, "scanner", "info", `Starting ${s.displayName}`, undefined, s.name)
@@ -342,6 +344,12 @@ async function executeScanners(
       allResults.push(result)
     }
 
+    // 超时控制
+    const { maxDuration } = getSettings()
+    const deadline = Date.now() + maxDuration * 60 * 1000
+    const timeoutPromise = (ms: number) => new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`扫描超时（${maxDuration}分钟）`)), ms))
+
     // Sliding-window concurrency limit
     const queue = [...groupScanners]
     const inFlight = new Set<Promise<void>>()
@@ -351,7 +359,12 @@ async function executeScanners(
         inFlight.add(p)
       }
       if (inFlight.size > 0) {
-        await Promise.race(Array.from(inFlight))
+        const remaining = deadline - Date.now()
+        if (remaining <= 0) throw new Error(`扫描超时（${maxDuration}分钟）`)
+        await Promise.race([
+          ...Array.from(inFlight),
+          timeoutPromise(Math.max(remaining, 5000)),
+        ])
       }
     }
     clearInterval(heartbeat)
@@ -521,7 +534,8 @@ export async function runCompositeScan(
   )
 
   // ── Phase 4: AI 聚合（跨引擎关联 + 假阳性检测）──────────────────────
-  if (sessionId && isLlmAvailable()) {
+  const settings = getSettings()
+  if (sessionId && isLlmAvailable() && settings.aiAggregation) {
     try {
       addLog(sessionId, "aggregation", "info", "🧠 AI aggregating scan results...")
 
