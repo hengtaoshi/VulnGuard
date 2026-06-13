@@ -180,7 +180,7 @@ function ReportCard({ scan, isExpanded, onToggle }) {
   const handleDelete = (e) => { e.stopPropagation(); if (!confirm(t("reports.deleteConfirm"))) return; setDeleting(true); deleteScan.mutateAsync(scan.id).catch(() => {}) }
 
   return <Card className={"border-border/50 transition-all duration-200 " + (isExpanded ? "ring-1 ring-primary/20" : "hover:border-border/80")}>
-    <button onClick={onToggle} className="w-full text-left focus:outline-none"><CardContent className="p-4">
+    <div onClick={onToggle} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle() } }} role="button" tabIndex={0} className="w-full text-left focus:outline-none cursor-pointer"><CardContent className="p-4">
       <div className="flex items-start gap-4">
         <div className={"h-10 w-10 rounded-full flex items-center justify-center text-sm font-black shrink-0 " + (
           scan.risk === "Secure" || scan.risk === "A" ? "bg-emerald-500/15 text-emerald-500"
@@ -219,7 +219,7 @@ function ReportCard({ scan, isExpanded, onToggle }) {
           </Button>
         </div>
       </div>
-    </CardContent></button>
+    </CardContent></div>
     {isExpanded && <div className="border-t border-border/50 px-4 pb-4"><ReportDetailWrapper scanId={scan.id} onClose={onToggle} /></div>}
   </Card>
 }
