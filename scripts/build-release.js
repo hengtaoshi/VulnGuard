@@ -21,7 +21,7 @@ const { platform, arch } = require("os")
 // ─── Paths ──────────────────────────────────────────────────────────────
 
 const ROOT = join(__dirname, "..")
-const NVD_DATA = join(ROOT, "..", ".nvd-cache")
+const NVD_DATA = join(ROOT, ".nvd-cache")
 const pkg = require(join(ROOT, "package.json"))
 const VERSION = process.env.RELEASE_VERSION || pkg.version
 const RELEASE_DIR = join(ROOT, `vulnguard-v${VERSION}`)
@@ -69,21 +69,26 @@ function main() {
     rmSync(RELEASE_DIR, { recursive: true, force: true })
   }
 
-  // ── [1/7] Build Next.js ───────────────────────────────────────────────
-  log("[1/7] Building Next.js (standalone)...")
-  // Pass proxy env vars to build process
-  const buildEnv = { ...process.env }
-  if (process.env.HTTP_PROXY) buildEnv.HTTP_PROXY = process.env.HTTP_PROXY
-  if (process.env.HTTPS_PROXY) buildEnv.HTTPS_PROXY = process.env.HTTPS_PROXY
-  if (process.env.http_proxy) buildEnv.http_proxy = process.env.http_proxy
-  if (process.env.https_proxy) buildEnv.https_proxy = process.env.https_proxy
-  execSync("npm run build", { cwd: ROOT, stdio: "pipe", timeout: 120000, env: buildEnv })
+  // ── [1/7] Build Next.js (skip if already built) ───────────────────────
+  const standaloneDir = join(ROOT, ".next", "standalone")
+  if (existsSync(join(standaloneDir, "server.js"))) {
+    log("[1/7] Next.js standalone already built — skipping")
+  } else {
+    log("[1/7] Building Next.js (standalone)...")
+    const buildEnv = { ...process.env }
+    if (process.env.HTTP_PROXY) buildEnv.HTTP_PROXY = process.env.HTTP_PROXY
+    if (process.env.HTTPS_PROXY) buildEnv.HTTPS_PROXY = process.env.HTTPS_PROXY
+    if (process.env.http_proxy) buildEnv.http_proxy = process.env.http_proxy
+    if (process.env.https_proxy) buildEnv.https_proxy = process.env.https_proxy
+    execSync("npm run build", { cwd: ROOT, stdio: "pipe", timeout: 120000, env: buildEnv })
+  }
 
   // ── [2/7] Create directory structure ──────────────────────────────────
   log("[2/7] Creating directory structure...")
   mkdirSync(APP_DIR, { recursive: true })
   mkdirSync(join(APP_DIR, "tools", "bin"), { recursive: true })
   mkdirSync(join(APP_DIR, "tools", "dependency-check"), { recursive: true })
+  mkdirSync(join(APP_DIR, "tools", "codeql-queries"), { recursive: true })
   mkdirSync(join(APP_DIR, ".nvd-cache", "data"), { recursive: true })
   mkdirSync(join(APP_DIR, "data", "uploads"), { recursive: true })
   mkdirSync(join(APP_DIR, ".scans"), { recursive: true })
@@ -92,8 +97,6 @@ function main() {
   // ── [3/7] Copy Next.js standalone output ──────────────────────────────
   log("[3/7] Copying Next.js standalone app...")
 
-  // Next.js standalone output is at .next/standalone/
-  const standaloneDir = join(ROOT, ".next", "standalone")
   if (!existsSync(standaloneDir)) {
     log("[3/7] Standalone output not found — build may have failed", false)
     process.exit(1)
@@ -141,10 +144,37 @@ function main() {
     )
   }
 
+  // tools/codeql-queries/ -- CodeQL query repository
+  if (existsSync(join(ROOT, "tools", "codeql-queries"))) {
+    log("Copying CodeQL query repository...")
+    copyRecursive(
+      join(ROOT, "tools", "codeql-queries"),
+      join(APP_DIR, "tools", "codeql-queries"),
+      (path, entry) => {
+        // Skip .git history to save space
+        if (entry.name === ".git") return false
+        return true
+      }
+    )
+  }
+
   // ── [5/7] Copy NVD database ───────────────────────────────────────────
   log("[5/7] Copying NVD database...")
   if (existsSync(NVD_DATA)) {
-    copyRecursive(NVD_DATA, join(RELEASE_DIR, ".nvd-cache"))
+    copyRecursive(NVD_DATA, join(RELEASE_DIR, ".nvd-cache"), (path, entry) => {
+      // Skip lock files and locked DB files (NVD update may be running)
+      if (entry.name.endsWith(".lock")) return false
+      if (entry.name.endsWith(".mv.db")) {
+        try {
+          const fd = require("fs").openSync(path, "r")
+          require("fs").closeSync(fd)
+          return true
+        } catch {
+          return false // skip locked DB file
+        }
+      }
+      return true
+    })
     const dbFile = join(RELEASE_DIR, ".nvd-cache", "data", "odc.mv.db")
     if (existsSync(dbFile)) {
       const size = require("fs").statSync(dbFile).size

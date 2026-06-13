@@ -14,12 +14,10 @@ import { runNucleiScan } from "./nuclei"
 import { runCveCppScan } from "./cve-cpp-scanner"
 import { runSwiftScan } from "./swift-scanner"
 import { runTrufflehogScan } from "./trufflehog-scanner"
-import { runBearerScan } from "./bearer-scanner"
 import { runScorecardScan } from "./scorecard-scanner"
 import { runOsvScan } from "./osv-scanner"
 import { runDependencyCheckScan } from "./dependency-check"
 import { runCodeqlScan } from "./codeql-scanner"
-import { runTrivyImageScan } from "./trivy"
 
 const TOOLS_BIN = join(process.cwd(), "tools", "bin")
 
@@ -102,7 +100,7 @@ const scanners: Scanner[] = [
     displayName: "Checkov",
     category: "filesystem",
     isAvailable: () => {
-      try { execSync("checkov --version", { stdio: "pipe", timeout: 5000 }); return true }
+      try { execSync("checkov --version", { stdio: "pipe", timeout: 15000 }); return true }
       catch { return false }
     },
     scan: runCheckovScan,
@@ -120,21 +118,6 @@ const scanners: Scanner[] = [
       }
     },
     scan: runTrivyScan,
-  },
-  {
-    name: "trivy-image",
-    displayName: "Trivy Image (容器)",
-    category: "filesystem",
-    isAvailable: () => {
-      try {
-        execSync(`"${join(TOOLS_BIN, "trivy.exe")}" --version`, { stdio: "pipe", timeout: 5000 })
-        return true
-      } catch {
-        return false
-      }
-    },
-    // 需要传入镜像名而非路径，兼容 Scanner 接口但实际使用时需包装
-    scan: (targetPath: string) => runTrivyImageScan(targetPath),
   },
   {
     name: "nuclei",
@@ -173,16 +156,6 @@ const scanners: Scanner[] = [
       return existsSync(join(TOOLS_BIN, "trufflehog.exe"))
     },
     scan: (targetPath: string) => runTrufflehogScan(targetPath),
-  },
-  {
-    name: "bearer",
-    displayName: "Bearer",
-    category: "sast",
-    isAvailable: () => {
-      // Bearer 没有 Windows 版本，只在 Linux/macOS 生效
-      return process.platform !== "win32"
-    },
-    scan: (targetPath: string) => runBearerScan(targetPath),
   },
   {
     name: "scorecard",

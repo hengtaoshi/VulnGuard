@@ -36,3 +36,4 @@ tools/bin/codeql/
 tools/dependency-check/
 tools/codeql-win64.zip
 tools/dependency-check.zip
+tools/codeql-queries/

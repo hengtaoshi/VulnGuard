@@ -130,9 +130,16 @@ function selectScannersByRules(
   // Filter by availability and deduplicate
   const result = selected.filter((n, i, a) => a.indexOf(n) === i).filter(n => availableNames.includes(n))
 
-  // "all" engine: add every available scanner
+  // "all" engine: 在语言匹配基础上扩展覆盖深度，不跑无关语言的扫描器
   if (engine === "all") {
-    return availableNames
+    const expanded = [...result]
+    // 补充通用/多维度扫描器（不同的检测引擎，更全面）
+    for (const name of ["trufflehog", "osv-scanner", "nuclei"]) {
+      if (availableNames.includes(name) && !expanded.includes(name)) {
+        expanded.push(name)
+      }
+    }
+    return expanded
   }
 
   return result

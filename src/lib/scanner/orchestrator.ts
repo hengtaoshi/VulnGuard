@@ -203,16 +203,6 @@ export function createFallbackPlan(
   const configNames = new Set(analysis.configDetails.map(c => c.name))
   const langs = new Set(Object.keys(analysis.languages))
 
-  if (engine === "all") {
-    return {
-      reasoning: "全量扫描模式：选择所有可用扫描器",
-      selectedScanners: availableNames,
-      parallelGroups: buildParallelGroups(availableNames, allScanners),
-      aiReview: false,
-      scanPriority: "depth",
-    }
-  }
-
   // ── 总是选中的扫描器 ──
   selected.push("semgrep", "gitleaks")
 
@@ -274,6 +264,23 @@ export function createFallbackPlan(
   }
 
   const selectedScanners = selected.filter((n, i, a) => a.indexOf(n) === i).filter(n => availableNames.includes(n))
+
+  if (engine === "all") {
+    // 全量模式：在语言匹配基础上补充通用扫描器
+    const expanded = [...selectedScanners]
+    for (const name of ["trufflehog", "osv-scanner", "nuclei"]) {
+      if (availableNames.includes(name) && !expanded.includes(name)) {
+        expanded.push(name)
+      }
+    }
+    return {
+      reasoning: `全量扫描模式：基于 ${analysis.projectTypes.join("/")} 项目类型的全面覆盖（${langs.size} 种语言）`,
+      selectedScanners: expanded,
+      parallelGroups: buildParallelGroups(expanded, allScanners),
+      aiReview: false,
+      scanPriority: "depth",
+    }
+  }
 
   return {
     reasoning: `规则回退：基于检测到的 ${analysis.projectTypes.join("/")} 项目类型和 ${langs.size} 种编程语言自动选择`,

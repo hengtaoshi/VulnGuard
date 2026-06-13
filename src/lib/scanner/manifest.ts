@@ -158,18 +158,6 @@ export const SCANNER_MANIFEST: ScannerManifestEntry[] = [
     limitations: "May produce false positives for high-entropy strings in test/sample data. Binary-based detection not available on all platforms.",
   },
   {
-    name: "bearer",
-    displayName: "Bearer",
-    category: "sast",
-    supportedModes: ["source"],
-    description: "Privacy and security focused SAST scanner that performs data flow analysis to detect privacy violations and security issues. Tracks sensitive data across code paths to identify data leaks, PII exposure, and compliance violations.",
-    scanTypes: ["Privacy Violations", "Data Leak Detection", "PII Exposure", "Data Flow Analysis", "Sensitive Data Propagation"],
-    typicalDuration: "medium",
-    priority: 2,
-    techIndicators: [".py", ".js", ".ts", ".rb", ".go", ".java"],
-    limitations: "Windows is not supported. Only available on Linux and macOS. Focuses on privacy/data-flow rather than general SAST issues.",
-  },
-  {
     name: "scorecard",
     displayName: "OpenSSF Scorecard",
     category: "sast",
