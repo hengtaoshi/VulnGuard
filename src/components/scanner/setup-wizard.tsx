@@ -362,6 +362,11 @@ export function SetupWizard({ open, onFinish }: WizardProps) {
     const total = allScanners.length
     const doneCount = completed.length + failed.length
 
+    // 加权累计进度：已完成的算 (doneCount/total)*100%，当前的在加 (current/total)%
+    const weightedPct = total > 0
+      ? Math.min(100, (doneCount / total) * 100 + (progress / total))
+      : 0
+
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/95 backdrop-blur-sm">
         <div className="w-full max-w-md mx-auto p-6">
