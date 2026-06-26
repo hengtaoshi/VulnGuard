@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useI18n } from "@/lib/i18n/context"
-import { Loader2, CheckCircle2, AlertCircle, Trash2, RotateCcw } from "lucide-react"
+import { Loader2, CheckCircle2, AlertCircle, Trash2, RotateCcw, Download } from "lucide-react"
 import type { AppSettings } from "@/lib/settings-store"
 import { useRouter } from "next/navigation"
 
@@ -261,6 +261,35 @@ export default function SettingsPage() {
           </span>
         )}
       </div>
+
+      {/* 检查更新 */}
+      <Card>
+        <CardHeader>
+          <CardTitle>检查更新</CardTitle>
+          <CardDescription>检查 GitHub 上的最新版本</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={async () => {
+              const btn = document.activeElement as HTMLButtonElement
+              btn.disabled = true
+              try {
+                const res: any = await (window as any).vulnguard?.checkForUpdates()
+                if (res?.ok) alert("正在检查更新...")
+                else alert(res?.error || "检查更新失败")
+              } finally {
+                btn.disabled = false
+              }
+            }}
+          >
+            <Download className="h-3.5 w-3.5" />
+            检查更新
+          </Button>
+        </CardContent>
+      </Card>
 
       {/* 危险区域 */}
       <Card className="border-destructive/20">

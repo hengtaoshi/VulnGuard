@@ -16,6 +16,9 @@ contextBridge.exposeInMainWorld("vulnguard", {
   downloadScanner: (url, name) => ipcRenderer.invoke("download-scanner", url, name),
   getScannerStatus: () => ipcRenderer.invoke("get-scanner-status"),
 
+  // Updates
+  checkForUpdates: () => ipcRenderer.invoke("check-for-updates"),
+
   // File dialogs
   openFileDialog: () => ipcRenderer.invoke("open-file-dialog"),
 

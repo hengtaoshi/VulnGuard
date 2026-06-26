@@ -58,6 +58,15 @@ ipcMain.handle("get-scanner-status", () => {
   }
 })
 
+ipcMain.handle("check-for-updates", async () => {
+  try {
+    await autoUpdater.checkForUpdates()
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e.message }
+  }
+})
+
 ipcMain.handle("open-file-dialog", async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ["openFile", "openDirectory", "multiSelections"],
