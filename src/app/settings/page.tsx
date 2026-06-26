@@ -19,6 +19,8 @@ interface ScannerInfo {
 }
 import type { AppSettings } from "@/lib/settings-store"
 import { useRouter } from "next/navigation"
+import { InstallDialog } from "@/components/scanner/install-dialog"
+import { SetupWizard } from "@/components/scanner/setup-wizard"
 
 const DEFAULT_SETTINGS: AppSettings = {
   maxDuration: 30,
@@ -70,6 +72,9 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null)
   const [scanners, setScanners] = useState<ScannerInfo[]>([])
   const [scannersLoading, setScannersLoading] = useState(true)
+  const [installTarget, setInstallTarget] = useState<{ name: string; label: string } | null>(null)
+  const [showWizard, setShowWizard] = useState(false)
+  const [firstRun, setFirstRun] = useState(true)
 
   useEffect(() => {
     fetch("/api/settings")
@@ -119,6 +124,17 @@ export default function SettingsPage() {
         : s.disabledScanners.filter(n => n !== name)
       return { ...s, disabledScanners: list }
     })
+  }, [])
+
+  const handleInstallComplete = useCallback((ok: boolean) => {
+    setInstallTarget(null)
+    if (ok) {
+      // Refresh scanner list to reflect new availability
+      fetch("/api/scanners")
+        .then(r => r.json())
+        .then(data => setScanners(data))
+        .catch(() => {})
+    }
   }, [])
 
   const handleClear = useCallback(async () => {
@@ -305,7 +321,15 @@ export default function SettingsPage() {
             <Cpu className="h-4 w-4 text-primary" />
             <CardTitle>{t("settings.scannerManagement")}</CardTitle>
           </div>
-          <CardDescription>{t("settings.scannerManagementDesc")}</CardDescription>
+          <div className="flex items-center justify-between">
+            <CardDescription>{t("settings.scannerManagementDesc")}</CardDescription>
+            <button
+              onClick={() => setShowWizard(true)}
+              className="rounded-md bg-primary/10 px-2 py-1 text-[10px] font-medium text-primary hover:bg-primary/20 transition-colors shrink-0"
+            >
+              批量安装
+            </button>
+          </div>
         </CardHeader>
         <CardContent>
           {scannersLoading ? (
@@ -326,24 +350,31 @@ export default function SettingsPage() {
                       <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${sc.available ? "bg-emerald-500" : "bg-muted"}`} />
                       <span className="text-xs font-medium">{sc.displayName}</span>
                       <span className="text-[10px] text-muted-foreground uppercase">{sc.category}</span>
-                      {!sc.available && (
-                        <span className="text-[10px] text-muted-foreground italic">{t("settings.scannerUnavailable")}</span>
+                                </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {!sc.available ? (
+                        <button
+                          onClick={() => setInstallTarget({ name: sc.name, label: sc.displayName })}
+                          className="rounded-md bg-primary/10 px-2 py-1 text-[10px] font-medium text-primary hover:bg-primary/20 transition-colors"
+                        >
+                          安装
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={!isDisabled}
+                          onClick={() => toggleScanner(sc.name, !isDisabled)}
+                          className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus-visible:outline-none ${
+                            !isDisabled ? "bg-primary" : "bg-input"
+                          }`}
+                        >
+                          <span className={`pointer-events-none block h-3.5 w-3.5 rounded-full bg-background shadow-lg ring-0 transition-transform ${
+                            !isDisabled ? "translate-x-4" : "translate-x-0"
+                          }`} />
+                        </button>
                       )}
                     </div>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={!isDisabled}
-                      disabled={!sc.available}
-                      onClick={() => toggleScanner(sc.name, !isDisabled)}
-                      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus-visible:outline-none disabled:opacity-30 disabled:cursor-not-allowed ${
-                        !isDisabled ? "bg-primary" : "bg-input"
-                      }`}
-                    >
-                      <span className={`pointer-events-none block h-3.5 w-3.5 rounded-full bg-background shadow-lg ring-0 transition-transform ${
-                        !isDisabled ? "translate-x-4" : "translate-x-0"
-                      }`} />
-                    </button>
                   </div>
                 )
               })}
@@ -495,7 +526,7 @@ export default function SettingsPage() {
         <CardContent className="space-y-3">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Tag className="h-3.5 w-3.5" />
-            当前版本：v{typeof window !== "undefined" ? (window as any).vulnguard?.version || "0.3.1" : "0.3.1"}
+            当前版本：v{typeof window !== "undefined" ? (window as any).vulnguard?.version || "?" : "?"}
           </div>
           <Button
             variant="outline"
@@ -519,6 +550,30 @@ export default function SettingsPage() {
           </Button>
         </CardContent>
       </Card>
+
+      {/* 扫描器安装对话框 */}
+      {installTarget && (
+        <InstallDialog
+          scannerName={installTarget.name}
+          scannerLabel={installTarget.label}
+          open={!!installTarget}
+          onClose={() => setInstallTarget(null)}
+          onComplete={handleInstallComplete}
+        />
+      )}
+
+      {/* 首次启动 / 批量安装向导 */}
+      <SetupWizard
+        open={showWizard}
+        onFinish={() => {
+          setShowWizard(false)
+          // 刷新扫描器列表
+          fetch("/api/scanners")
+            .then(r => r.json())
+            .then(data => setScanners(data))
+            .catch(() => {})
+        }}
+      />
 
       {/* 危险区域 */}
       <Card className="border-destructive/20">

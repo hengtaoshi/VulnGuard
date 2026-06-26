@@ -9,11 +9,12 @@ contextBridge.exposeInMainWorld("vulnguard", {
   // App info
   platform: process.platform,
   arch: process.arch,
-  version: process.env.npm_package_version || "0.3.1",
+  // 动态从 main process 获取版本，避免打包后 process.env.npm_package_version 不可用
+  version: require("electron").ipcRenderer.sendSync("get-version-sync") || "0.0.0",
 
   // IPC helpers for future use
   getDataDir: () => ipcRenderer.invoke("get-data-dir"),
-  downloadScanner: (url, name) => ipcRenderer.invoke("download-scanner", url, name),
+  downloadScanner: (name) => ipcRenderer.invoke("download-scanner", name),
   getScannerStatus: () => ipcRenderer.invoke("get-scanner-status"),
 
   // Updates

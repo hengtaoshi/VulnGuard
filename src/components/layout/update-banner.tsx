@@ -3,24 +3,8 @@
 import { useState, useEffect } from "react"
 import { Download, Loader2, CheckCircle2 } from "lucide-react"
 
-interface UpdateInfo {
-  version: string
-}
-
-declare global {
-  interface Window {
-    vulnguard?: {
-      checkForUpdates: () => Promise<{ ok: boolean; canUpdate?: boolean; version?: string; error?: string }>
-      startUpdate: () => Promise<{ ok: boolean; error?: string }>
-      onUpdateAvailable: (cb: (info: UpdateInfo) => void) => () => void
-      onUpdateProgress: (cb: (p: { percent: number }) => void) => () => void
-      onUpdateDownloaded: (cb: () => void) => () => void
-    }
-  }
-}
-
 export function UpdateBanner() {
-  const [update, setUpdate] = useState<UpdateInfo | null>(null)
+  const [update, setUpdate] = useState<VulnguardUpdateInfo | null>(null)
   const [dismissed, setDismissed] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [progress, setProgress] = useState(0)
@@ -44,7 +28,11 @@ export function UpdateBanner() {
     const vg = window.vulnguard
     if (!vg) return
 
-    const unsubProgress = vg.onUpdateProgress((p) => setProgress(p.percent))
+    const unsubProgress = vg.onUpdateProgress((p) => {
+      // electron-updater 可能因重试/切换镜像导致 percent 递减
+      // 用 Math.max 保证进度条只进不退
+      setProgress((prev) => Math.max(prev, p.percent))
+    })
     const unsubDone = vg.onUpdateDownloaded(() => {
       setDone(true)
       setDownloading(false)

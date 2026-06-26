@@ -10,6 +10,7 @@ const { fork } = require("child_process")
 const path = require("path")
 const fs = require("fs")
 const http = require("http")
+const { installScanner } = require("./scanner-downloader")
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -50,6 +51,13 @@ function ensureDataDir() {
 
 const { ipcMain } = require("electron")
 
+// 从 package.json 读取版本，打包后 app.getVersion() 与 package.json 一致
+const pkgVersion = require(path.join(__dirname, "..", "package.json")).version
+
+ipcMain.on("get-version-sync", (event) => {
+  event.returnValue = pkgVersion
+})
+
 ipcMain.handle("get-data-dir", () => DATA_DIR)
 
 ipcMain.handle("get-scanner-status", () => {
@@ -58,6 +66,20 @@ ipcMain.handle("get-scanner-status", () => {
   return {
     scanEngine: fs.existsSync(scanEngineExe) || fs.existsSync(scanEnginePy),
     toolsDir: TOOLS_DIR,
+  }
+})
+
+ipcMain.handle("download-scanner", async (_event, scannerName) => {
+  try {
+    const result = await installScanner(scannerName, TOOLS_DIR, (progress) => {
+      // 通过 IPC 回传下载进度给渲染进程
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("scanner-progress", { scanner: scannerName, ...progress })
+      }
+    })
+    return result
+  } catch (e) {
+    return { ok: false, error: e.message }
   }
 })
 
