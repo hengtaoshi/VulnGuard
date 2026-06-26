@@ -9,7 +9,7 @@ contextBridge.exposeInMainWorld("vulnguard", {
   // App info
   platform: process.platform,
   arch: process.arch,
-  version: process.env.npm_package_version || "0.3.0",
+  version: process.env.npm_package_version || "0.3.1",
 
   // IPC helpers for future use
   getDataDir: () => ipcRenderer.invoke("get-data-dir"),

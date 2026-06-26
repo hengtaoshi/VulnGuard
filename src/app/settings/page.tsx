@@ -17,9 +17,26 @@ interface ScannerInfo {
   typicalDuration: string
   priority: number
 }
-import { DEFAULT_SETTINGS } from "@/lib/settings-store"
 import type { AppSettings } from "@/lib/settings-store"
 import { useRouter } from "next/navigation"
+
+const DEFAULT_SETTINGS: AppSettings = {
+  maxDuration: 30,
+  autoReport: true,
+  defaultEngine: "ai",
+  aiAggregation: true,
+  concurrentScanners: 4,
+  retentionDays: 0,
+  deepseekApiKey: "",
+  deepseekBaseUrl: "",
+  deepseekModel: "deepseek-v4-flash",
+  proxyEnabled: false,
+  httpProxy: "",
+  httpsProxy: "",
+  webhookEnabled: false,
+  webhookUrl: "",
+  disabledScanners: [],
+}
 
 function Toggle({ value, onChange, id }: { value: boolean; onChange: (v: boolean) => void; id: string }) {
   return (
@@ -478,7 +495,7 @@ export default function SettingsPage() {
         <CardContent className="space-y-3">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Tag className="h-3.5 w-3.5" />
-            当前版本：v{typeof window !== "undefined" ? (window as any).vulnguard?.version || "0.3.0" : "0.3.0"}
+            当前版本：v{typeof window !== "undefined" ? (window as any).vulnguard?.version || "0.3.1" : "0.3.1"}
           </div>
           <Button
             variant="outline"
