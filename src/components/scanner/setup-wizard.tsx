@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useCallback, useEffect } from "react"
-import { Shield, Download, CheckCircle2, AlertCircle, X, Search, FileSearch, Lock, Cpu, Globe, Package } from "lucide-react"
+import { Shield, Download, CheckCircle2, AlertCircle, Search, FileSearch, Lock, Cpu, Package } from "lucide-react"
 
 interface InstallProgress {
   percent: number
@@ -10,8 +10,6 @@ interface InstallProgress {
   error?: string
   done?: boolean
 }
-
-const isElectron = typeof window !== "undefined" && window.vulnguard?.downloadScanner
 
 // ─── Category definitions ──────────────────────────────────────────────────────
 interface Category {
@@ -103,12 +101,15 @@ export function SetupWizard({ open, onFinish }: SetupWizardProps) {
   const [error, setError] = useState<string | null>(null)
   const [completed, setCompleted] = useState<string[]>([])
   const [failed, setFailed] = useState<string[]>([])
+  const [isElectron, setIsElectron] = useState(false)
   const abortRef = useRef(false)
-  // 单调递增进度：用 ref 记录历史最高 rawPct，用 state 驱动 UI 确保只增不减
-  const maxPctRef = useRef(0)
   const [displayPct, setDisplayPct] = useState(0)
 
-  // 在每次渲染时，确保 displayPct 只增不减
+  useEffect(() => {
+    setIsElectron(typeof window !== "undefined" && !!window.vulnguard?.downloadScanner)
+  }, [])
+
+  // 单调递增进度：用 functional updater 确保只涨不跌，无需额外 ref
   useEffect(() => {
     if (step === "installing") {
       const allScanners = getScannersForCategories(selectedCategories)
@@ -117,15 +118,9 @@ export function SetupWizard({ open, onFinish }: SetupWizardProps) {
       const rawPct = total > 0
         ? Math.min(100, (doneCount / total) * 100 + (progress / total))
         : 0
-      if (rawPct > maxPctRef.current) {
-        maxPctRef.current = rawPct
-      }
-      // 只向上涨，绝不下降
-      if (maxPctRef.current > displayPct) {
-        setDisplayPct(maxPctRef.current)
-      }
+      setDisplayPct(prev => Math.max(prev, rawPct))
     }
-  }, [step, progress, completed.length, failed.length, selectedCategories, displayPct])
+  }, [step, progress, completed.length, failed.length, selectedCategories])
 
   const toggleCategory = (cat: string) => {
     setSelectedCategories((prev) => {
@@ -144,7 +139,6 @@ export function SetupWizard({ open, onFinish }: SetupWizardProps) {
     setDisplayPct(0)
     setProgress(0)
     abortRef.current = false
-    maxPctRef.current = 0
 
     const scanners = getScannersForCategories(selectedCategories)
     let hasError = false
@@ -172,6 +166,7 @@ export function SetupWizard({ open, onFinish }: SetupWizardProps) {
           setCompleted((prev) => [...prev, sc.displayName])
         } else {
           setFailed((prev) => [...prev, sc.displayName])
+          setError(result?.error || "安装失败")
           hasError = true
         }
       } else {
@@ -184,27 +179,67 @@ export function SetupWizard({ open, onFinish }: SetupWizardProps) {
           })
 
           if (!res.ok) {
+            const errText = await res.text().catch(() => "HTTP " + res.status)
+            setError(errText)
             setFailed((prev) => [...prev, sc.displayName])
             hasError = true
             continue
           }
 
-          // For web, just mark as completed (no progress tracking)
-          setCompleted((prev) => [...prev, sc.displayName])
-        } catch {
+          const reader = res.body?.getReader()
+          if (!reader) {
+            setError("无法读取响应流")
+            setFailed((prev) => [...prev, sc.displayName])
+            hasError = true
+            continue
+          }
+
+          const decoder = new TextDecoder()
+          let buffer = ""
+          let installOk = false
+
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+
+            buffer += decoder.decode(value, { stream: true })
+            const lines = buffer.split("\n")
+            buffer = lines.pop() || ""
+
+            for (const line of lines) {
+              if (line.startsWith("data: ")) {
+                try {
+                  const data = JSON.parse(line.slice(6))
+                  if (data.error) {
+                    setError(data.error)
+                    break
+                  }
+                  setProgress(data.percent)
+                  if (data.done && data.ok) {
+                    installOk = true
+                  }
+                } catch { /* skip malformed SSE */ }
+              }
+            }
+          }
+
+          if (installOk) {
+            setCompleted((prev) => [...prev, sc.displayName])
+          } else {
+            setError("安装未完成")
+            setFailed((prev) => [...prev, sc.displayName])
+            hasError = true
+          }
+        } catch (e) {
+          setError(e instanceof Error ? e.message : "安装请求失败")
           setFailed((prev) => [...prev, sc.displayName])
           hasError = true
         }
       }
-
-      // Check if we want to abort after a failure
-      if (sc.name === "gitleaks" && hasError) {
-        // Only continue trying other scanners after failures
-      }
     }
 
     setStep("done")
-  }, [selectedCategories])
+  }, [selectedCategories, isElectron])
 
   const totalSize = totalSizeForCategories(selectedCategories)
 
@@ -343,7 +378,7 @@ export function SetupWizard({ open, onFinish }: SetupWizardProps) {
             </p>
           </div>
 
-          {/* 单调递增进度条：用 displayPct 驱动 UI，useEffect 确保只涨不跌 */}
+          {/* 单调递增进度条 */}
           <div className="h-3 w-full overflow-hidden rounded-full bg-secondary mb-5">
             <div
               className="h-full rounded-full bg-primary transition-all duration-500 ease-out"
