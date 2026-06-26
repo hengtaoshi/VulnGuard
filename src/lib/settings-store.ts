@@ -23,15 +23,42 @@ export interface AppSettings {
   concurrentScanners: number
   /** 自动清理扫描数据天数（0 = 永不） */
   retentionDays: number
+  /** DeepSeek API Key */
+  deepseekApiKey: string
+  /** DeepSeek API Base URL */
+  deepseekBaseUrl: string
+  /** DeepSeek 模型 */
+  deepseekModel: string
+  /** 代理开关 */
+  proxyEnabled: boolean
+  /** HTTP 代理地址 */
+  httpProxy: string
+  /** HTTPS 代理地址 */
+  httpsProxy: string
+  /** Webhook 通知开关 */
+  webhookEnabled: boolean
+  /** Webhook URL */
+  webhookUrl: string
+  /** 禁用的扫描器名称列表 */
+  disabledScanners: string[]
 }
 
-const DEFAULT_SETTINGS: AppSettings = {
+export const DEFAULT_SETTINGS: AppSettings = {
   maxDuration: 30,
   autoReport: true,
   defaultEngine: "ai",
   aiAggregation: true,
   concurrentScanners: 4,
   retentionDays: 0,
+  deepseekApiKey: "",
+  deepseekBaseUrl: "",
+  deepseekModel: "deepseek-v4-flash",
+  proxyEnabled: false,
+  httpProxy: "",
+  httpsProxy: "",
+  webhookEnabled: false,
+  webhookUrl: "",
+  disabledScanners: [],
 }
 
 function ensureDir() {

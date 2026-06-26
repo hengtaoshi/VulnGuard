@@ -60,7 +60,16 @@ ipcMain.handle("get-scanner-status", () => {
 
 ipcMain.handle("check-for-updates", async () => {
   try {
-    await autoUpdater.checkForUpdates()
+    const result = await autoUpdater.checkForUpdates()
+    return { ok: true, canUpdate: !!result?.updateInfo, version: result?.updateInfo?.version }
+  } catch (e) {
+    return { ok: false, error: e.message }
+  }
+})
+
+ipcMain.handle("start-update", async () => {
+  try {
+    await autoUpdater.downloadUpdate()
     return { ok: true }
   } catch (e) {
     return { ok: false, error: e.message }
@@ -201,22 +210,20 @@ function setupAutoUpdater() {
   if (IS_DEV) return
 
   autoUpdater.setFeedURL({ provider: "github", owner: "hengtaoshi", repo: "VulnGuard" })
+  autoUpdater.autoDownload = false
 
-  autoUpdater.on("update-downloaded", () => {
-    dialog.showMessageBox(mainWindow, {
-      type: "question",
-      title: "更新就绪",
-      message: "新版本已下载，是否立即重启安装？",
-      buttons: ["重启", "稍后"],
-      defaultId: 0,
-    }).then(({ response }) => {
-      if (response === 0) autoUpdater.quitAndInstall()
-    })
+  autoUpdater.on("update-available", (info) => {
+    mainWindow?.webContents.send("update-available", { version: info.version })
   })
 
-  // Check for updates 5s after window is ready
-  mainWindow.once("ready-to-show", () => {
-    setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 5000)
+  autoUpdater.on("download-progress", (progress) => {
+    mainWindow?.webContents.send("update-progress", { percent: Math.round(progress.percent) })
+  })
+
+  autoUpdater.on("update-downloaded", () => {
+    mainWindow?.webContents.send("update-downloaded")
+    // Auto-quit-and-install after the renderer has shown the "done" state
+    setTimeout(() => autoUpdater.quitAndInstall(), 3000)
   })
 }
 
@@ -245,6 +252,13 @@ function createWindow() {
   // Show window when ready
   mainWindow.once("ready-to-show", () => {
     mainWindow.show()
+    // Silent update check after 5s — banner will show in renderer if available
+    if (!IS_DEV) {
+      setTimeout(async () => {
+        try { await autoUpdater.checkForUpdates() }
+        catch (e) { console.error("[auto-updater] check failed:", e.message) }
+      }, 5000)
+    }
   })
 
   // Open external links in browser

@@ -5,8 +5,14 @@
  * 供 orchestrator、ai-aggregator 等模块统一使用。
  */
 
-const MODEL = process.env.DEEPSEEK_MODEL || "deepseek-v4-flash"
-const API_URL = `${process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com"}/v1/chat/completions`
+import { getSettings } from "../settings-store"
+
+function getModel(): string {
+  return process.env.DEEPSEEK_MODEL || getSettings().deepseekModel || "deepseek-v4-flash"
+}
+function getApiUrl(): string {
+  return `${process.env.DEEPSEEK_BASE_URL || getSettings().deepseekBaseUrl || "https://api.deepseek.com"}/v1/chat/completions`
+}
 
 export interface LlmMessage {
   role: "system" | "user" | "assistant"
@@ -23,7 +29,7 @@ export interface LlmOptions {
  * 检查 DeepSeek API 是否可用
  */
 export function isLlmAvailable(): boolean {
-  return !!process.env.DEEPSEEK_API_KEY
+  return !!(process.env.DEEPSEEK_API_KEY || getSettings().deepseekApiKey)
 }
 
 /**
@@ -35,7 +41,7 @@ export async function callLlm(
   userPrompt: string,
   options: LlmOptions = {},
 ): Promise<string | null> {
-  const apiKey = process.env.DEEPSEEK_API_KEY
+  const apiKey = process.env.DEEPSEEK_API_KEY || getSettings().deepseekApiKey
   if (!apiKey) return null
 
   const {
@@ -48,14 +54,14 @@ export async function callLlm(
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), timeoutMs)
 
-    const res = await fetch(API_URL, {
+    const res = await fetch(getApiUrl(), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: MODEL,
+        model: getModel(),
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },

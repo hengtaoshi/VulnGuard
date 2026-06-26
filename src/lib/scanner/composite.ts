@@ -447,6 +447,17 @@ export async function runCompositeScan(
   // Resolve relative path to absolute
   targetPath = require("path").resolve(targetPath)
 
+  // 应用代理设置（对子进程生效）
+  const { proxyEnabled, httpProxy, httpsProxy } = getSettings()
+  if (proxyEnabled) {
+    if (httpProxy && /^https?:\/\//.test(httpProxy)) {
+      process.env.HTTP_PROXY = process.env.http_proxy = httpProxy
+    }
+    if (httpsProxy && /^https?:\/\//.test(httpsProxy)) {
+      process.env.HTTPS_PROXY = process.env.https_proxy = httpsProxy
+    }
+  }
+
   // ── Phase 0: 目标分析 ────────────────────────────────────────────────
   let targetAnalysis: TargetAnalysis | null = null
   if (sessionId) {
@@ -498,6 +509,13 @@ export async function runCompositeScan(
   // 扫描器选择：始终使用规则引擎（确定性），不用 AI
   // AI 仅在 Phase 4 聚合阶段用于跨扫描器关联和假阳性检测
   selectedScanners = selectScannersByRules(targetAnalysis, engine, availableNames)
+
+  // 过滤用户禁用和不可用的扫描器
+  const { disabledScanners } = getSettings()
+  if (disabledScanners?.length > 0) {
+    selectedScanners = selectedScanners.filter(n => !disabledScanners.includes(n))
+  }
+
   if (sessionId) {
     addLog(sessionId, "system", "info",
       `Rules selected ${selectedScanners.length} scanners: ${selectedScanners.join(", ")}`)
@@ -600,8 +618,9 @@ export async function runCompositeScan(
   }
 
   // ── Phase 5: Webhook 通知 ────────────────────────────────────────────
-  const webhookUrl = process.env.WEBHOOK_URL
-  if (webhookUrl && sessionId) {
+  const { webhookEnabled, webhookUrl: settingsWebhookUrl } = getSettings()
+  const webhookUrl = webhookEnabled ? (settingsWebhookUrl || process.env.WEBHOOK_URL) : undefined
+  if (webhookUrl && /^https?:\/\//.test(webhookUrl) && sessionId) {
     // 异步发送，不阻塞
     notifyWebhook(webhookUrl, { sessionId, target: targetPath, engine, result }).catch(() => {})
   }

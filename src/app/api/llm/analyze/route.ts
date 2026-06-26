@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import type { LLMAnalysisRequest, LLMAnalysisResponse } from "@/lib/api/llm"
-import { DEEPSEEK_MODEL, DEEPSEEK_API_URL } from "@/lib/api/llm"
+import { getDeepseekModel, getDeepseekApiUrl } from "@/lib/api/llm"
 
 export async function POST(request: Request) {
   try {
@@ -68,14 +68,14 @@ ${vulnContext || "无漏洞发现"}
   "overallAdvice": "综合安全建议（100字以内）"
 }`
 
-    const res = await fetch(DEEPSEEK_API_URL, {
+    const res = await fetch(getDeepseekApiUrl(), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: DEEPSEEK_MODEL,
+        model: getDeepseekModel(),
         messages: [{ role: "user", content: prompt }],
         temperature: 0.3,
         max_tokens: 2048,
