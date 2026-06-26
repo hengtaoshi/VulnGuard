@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -43,6 +43,51 @@ const DEFAULT_SETTINGS: AppSettings = {
   webhookEnabled: false,
   webhookUrl: "",
   disabledScanners: [],
+}
+
+function InlineSelect({ value, options, onChange }: { value: string; options: { value: string; label: string }[]; onChange: (v: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [])
+
+  const selected = options.find(o => o.value === value)
+  return (
+    <div ref={ref} className="relative shrink-0">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1.5 h-8 rounded-lg border border-border bg-card px-2.5 text-xs text-foreground hover:bg-accent transition-colors whitespace-nowrap"
+      >
+        {selected?.label || value}
+        <svg className="h-3 w-3 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-50 min-w-[140px] rounded-lg border border-border bg-card shadow-xl overflow-hidden">
+          {options.map(opt => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => { onChange(opt.value); setOpen(false) }}
+              className={`w-full px-3 py-1.5 text-xs text-left transition-colors hover:bg-accent ${
+                opt.value === value ? "text-primary font-medium" : "text-foreground"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function Toggle({ value, onChange, id }: { value: boolean; onChange: (v: boolean) => void; id: string }) {
@@ -270,14 +315,14 @@ export default function SettingsPage() {
                   <p className="font-medium text-sm">{t("settings.defaultEngine")}</p>
                   <p className="text-xs text-muted-foreground mt-0.5">{t("settings.defaultEngineDesc")}</p>
                 </div>
-                <select
+                <InlineSelect
                   value={settings.defaultEngine}
-                  onChange={e => setSettings(s => ({ ...s, defaultEngine: e.target.value as "ai" | "all" }))}
-                  className="h-8 rounded-lg border border-border bg-background px-2.5 text-xs text-foreground shrink-0"
-                >
-                  <option value="ai">{t("settings.engineAi")}</option>
-                  <option value="all">{t("settings.engineAll")}</option>
-                </select>
+                  options={[
+                    { value: "ai", label: t("settings.engineAi") },
+                    { value: "all", label: t("settings.engineAll") },
+                  ]}
+                  onChange={v => setSettings(s => ({ ...s, defaultEngine: v as "ai" | "all" }))}
+                />
               </div>
 
               {/* 并行扫描器数 */}
@@ -396,14 +441,14 @@ export default function SettingsPage() {
             <div>
               <p className="text-xs font-medium mb-1">{t("settings.deepseekModel")}</p>
               <p className="text-[10px] text-muted-foreground mb-1.5">{t("settings.deepseekModelDesc")}</p>
-              <select
+              <InlineSelect
                 value={settings.deepseekModel}
-                onChange={e => setSettings(s => ({ ...s, deepseekModel: e.target.value }))}
-                className="h-8 rounded-lg border border-border bg-background px-2.5 text-xs text-foreground w-full"
-              >
-                <option value="deepseek-v4-flash">{t("settings.modelFlash")}</option>
-                <option value="deepseek-v4-pro">{t("settings.modelPro")}</option>
-              </select>
+                options={[
+                  { value: "deepseek-v4-flash", label: t("settings.modelFlash") },
+                  { value: "deepseek-v4-pro", label: t("settings.modelPro") },
+                ]}
+                onChange={v => setSettings(s => ({ ...s, deepseekModel: v }))}
+              />
             </div>
           </CardContent>
         </Card>

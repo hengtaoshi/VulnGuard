@@ -37,6 +37,30 @@
   }
 }
 
+/* Dark-theme number input spinners */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  opacity: 1;
+  height: 1.5em;
+  background: hsl(var(--secondary));
+  border-radius: 2px;
+  border: 1px solid hsl(var(--border));
+  cursor: pointer;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* Custom select styling to match dark theme */
+select option {
+  background: hsl(var(--card));
+  color: hsl(var(--foreground));
+}
+select optgroup {
+  background: hsl(var(--card));
+  color: hsl(var(--muted-foreground));
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 6px;

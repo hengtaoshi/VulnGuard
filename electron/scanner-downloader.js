@@ -2,16 +2,20 @@
  * VulnGuard Scanner Downloader
  *
  * Downloads scanner binaries/tools to the user data directory.
- * Supports progress reporting via IPC callbacks.
+ * Supports progress reporting via IPC callbacks and proxy-aware downloads.
  */
 const https = require("https")
 const http = require("http")
-const { createWriteStream, existsSync, mkdirSync, unlinkSync } = require("fs")
-const { join, extname } = require("path")
+const { createWriteStream, existsSync, mkdirSync, unlinkSync, readFileSync } = require("fs")
+const { join, dirname } = require("path")
 const { execSync } = require("child_process")
 const { platform } = require("os")
+const { URL } = require("url")
 
 const IS_WIN = platform() === "win32"
+
+// UserData dir — set by main.js via the APP_DATA_DIR env var fallback
+const DATA_DIR = process.env.VULNGUARD_DATA_DIR || ""
 
 // --- Scanner definitions ---------------------------------------------------
 
@@ -19,59 +23,50 @@ const SCANNER_DEFS = {
   gitleaks: {
     label: "Gitleaks",
     type: "binary",
-    url: IS_WIN
-      ? "https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks_win_x64.exe"
-      : "https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks_linux_x64",
+    url: `https://github.com/hengtaoshi/VulnGuard/releases/latest/download/gitleaks${IS_WIN ? ".exe" : ".linux"}`,
     filename: IS_WIN ? "gitleaks.exe" : "gitleaks",
   },
   trivy: {
     label: "Trivy",
     type: "binary",
-    url: IS_WIN
-      ? "https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.71.0_Windows-64bit.exe"
-      : "https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.71.0_Linux-64bit.tar.gz",
+    url: `https://github.com/hengtaoshi/VulnGuard/releases/latest/download/trivy${IS_WIN ? ".exe" : ".linux"}`,
     filename: IS_WIN ? "trivy.exe" : "trivy",
   },
   nuclei: {
     label: "Nuclei",
-    type: "zip",
-    url: `https://github.com/projectdiscovery/nuclei/releases/latest/download/nuclei_3.3.9_${IS_WIN ? "windows_amd64.zip" : "linux_amd64.zip"}`,
+    type: "binary",
+    url: `https://github.com/hengtaoshi/VulnGuard/releases/latest/download/nuclei${IS_WIN ? ".exe" : ".linux"}`,
     filename: IS_WIN ? "nuclei.exe" : "nuclei",
-    extractFilter: (entry) => entry.endsWith("nuclei" + (IS_WIN ? ".exe" : "")),
   },
   trufflehog: {
     label: "TruffleHog",
     type: "binary",
-    url: IS_WIN
-      ? "https://github.com/trufflesecurity/trufflehog/releases/latest/download/trufflehog_amd64.exe"
-      : "https://github.com/trufflesecurity/trufflehog/releases/latest/download/trufflehog_amd64_linux",
+    url: `https://github.com/hengtaoshi/VulnGuard/releases/latest/download/trufflehog${IS_WIN ? ".exe" : ".linux"}`,
     filename: IS_WIN ? "trufflehog.exe" : "trufflehog",
   },
   "osv-scanner": {
     label: "OSV-Scanner",
     type: "binary",
-    url: IS_WIN
-      ? "https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_windows_amd64.exe"
-      : "https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64",
+    url: `https://github.com/hengtaoshi/VulnGuard/releases/latest/download/osv-scanner${IS_WIN ? ".exe" : ".linux"}`,
     filename: IS_WIN ? "osv-scanner.exe" : "osv-scanner",
   },
   scorecard: {
     label: "OpenSSF Scorecard",
     type: "binary",
-    url: IS_WIN
-      ? "https://github.com/ossf/scorecard/releases/latest/download/scorecard_amd64.exe"
-      : "https://github.com/ossf/scorecard/releases/latest/download/scorecard_linux_amd64",
+    url: `https://github.com/hengtaoshi/VulnGuard/releases/latest/download/scorecard${IS_WIN ? ".exe" : ".linux"}`,
     filename: IS_WIN ? "scorecard.exe" : "scorecard",
   },
   semgrep: {
     label: "Semgrep",
-    type: "pip",
-    pkg: "semgrep",
+    type: "binary",
+    url: `https://github.com/hengtaoshi/VulnGuard/releases/latest/download/semgrep${IS_WIN ? ".exe" : ".linux"}`,
+    filename: IS_WIN ? "semgrep.exe" : "semgrep",
   },
   bandit: {
     label: "Bandit",
-    type: "pip",
-    pkg: "bandit",
+    type: "binary",
+    url: `https://github.com/hengtaoshi/VulnGuard/releases/latest/download/bandit${IS_WIN ? ".exe" : ".linux"}`,
+    filename: IS_WIN ? "bandit.exe" : "bandit",
   },
   checkov: {
     label: "Checkov",
@@ -80,26 +75,152 @@ const SCANNER_DEFS = {
   },
   "pip-audit": {
     label: "pip-audit",
-    type: "pip",
-    pkg: "pip-audit",
+    type: "binary",
+    url: `https://github.com/hengtaoshi/VulnGuard/releases/latest/download/pip-audit${IS_WIN ? ".exe" : ".linux"}`,
+    filename: IS_WIN ? "pip-audit.exe" : "pip-audit",
   },
   "dependency-check": {
     label: "Dependency-Check",
     type: "zip-extract",
-    url: IS_WIN
-      ? "https://github.com/jeremylong/DependencyCheck/releases/latest/download/dependency-check-12.1.0-release.zip"
-      : "https://github.com/jeremylong/DependencyCheck/releases/latest/download/dependency-check-12.1.0-release.tar.gz",
+    url: `https://github.com/hengtaoshi/VulnGuard/releases/latest/download/dependency-check.zip`,
     destDir: "dependency-check",
   },
   codeql: {
     label: "CodeQL",
     type: "zip-extract",
-    url: IS_WIN
-      ? "https://github.com/github/codeql-cli-binaries/releases/latest/download/codeql-win64.zip"
-      : "https://github.com/github/codeql-cli-binaries/releases/latest/download/codeql-linux64.zip",
+    url: `https://github.com/hengtaoshi/VulnGuard/releases/latest/download/codeql${IS_WIN ? ".zip" : ".linux.zip"}`,
     destDir: "codeql",
     extractFilter: (entry) => entry.includes("codeql/codeql" + (IS_WIN ? ".exe" : "")),
   },
+}
+
+// --- Proxy-aware request ---------------------------------------------------
+
+/**
+ * Apply proxy settings from settings.json to environment variables.
+ * Reads proxy config from the app's persistent settings file.
+ */
+function applyProxyFromEnv() {
+  if (!DATA_DIR) return
+  try {
+    const settingsPath = join(DATA_DIR, "settings.json")
+    if (!existsSync(settingsPath)) return
+
+    const raw = readFileSync(settingsPath, "utf-8")
+    const settings = JSON.parse(raw)
+
+    if (settings.proxyEnabled) {
+      if (settings.httpProxy) process.env.HTTP_PROXY = settings.httpProxy
+      if (settings.httpsProxy) process.env.HTTPS_PROXY = settings.httpsProxy
+    }
+  } catch { /* best effort */ }
+}
+
+/**
+ * Get proxy agent URL from environment for the given target URL.
+ * Returns { hostname, port, protocol } or null.
+ */
+function getProxyForUrl(targetUrl) {
+  const httpsProxy = process.env.HTTPS_PROXY || process.env.https_proxy || ""
+  const httpProxy = process.env.HTTP_PROXY || process.env.http_proxy || ""
+
+  const proxyUrl = targetUrl.startsWith("https") ? httpsProxy : httpProxy
+  if (!proxyUrl) return null
+
+  try {
+    const parsed = new URL(proxyUrl)
+    return {
+      hostname: parsed.hostname,
+      port: parseInt(parsed.port, 10) || (parsed.protocol === "https:" ? 443 : 80),
+      protocol: parsed.protocol.replace(":", ""),
+      auth: parsed.username ? `${parsed.username}:${parsed.password}` : null,
+    }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Make an HTTP(S) request, optionally through a proxy (CONNECT tunnel).
+ * Returns the response object.
+ */
+function makeRequest(urlStr, timeout = 30000) {
+  return new Promise((resolve, reject) => {
+    const targetUrl = new URL(urlStr)
+    const proxy = getProxyForUrl(urlStr)
+
+    const options = {
+      hostname: proxy ? proxy.hostname : targetUrl.hostname,
+      port: proxy ? proxy.port : (targetUrl.port || (targetUrl.protocol === "https:" ? 443 : 80)),
+      timeout,
+      headers: {},
+    }
+
+    if (proxy) {
+      // Tunnel through proxy
+      if (targetUrl.protocol === "https:") {
+        options.method = "CONNECT"
+        options.path = `${targetUrl.hostname}:${targetUrl.port || 443}`
+        if (proxy.auth) {
+          options.headers["Proxy-Authorization"] = "Basic " + Buffer.from(proxy.auth).toString("base64")
+        }
+
+        const proxyReq = http.request(options)
+        proxyReq.on("connect", (res, tunnelSocket) => {
+          if (res.statusCode !== 200) {
+            reject(new Error(`Proxy CONNECT failed: HTTP ${res.statusCode}`))
+            return
+          }
+          // Tunnel established — now make the real HTTPS request through the tunnel
+          const realReq = https.request({
+            hostname: targetUrl.hostname,
+            port: targetUrl.port || 443,
+            path: targetUrl.pathname + targetUrl.search,
+            method: "GET",
+            socket: tunnelSocket,
+            agent: false,
+            timeout,
+          })
+          realReq.on("response", resolve)
+          realReq.on("error", reject)
+          realReq.on("timeout", () => { realReq.destroy(); reject(new Error("Request timeout")) })
+          realReq.end()
+        })
+        proxyReq.on("error", reject)
+        proxyReq.on("timeout", () => { proxyReq.destroy(); reject(new Error("Proxy connect timeout")) })
+        proxyReq.end()
+      } else {
+        // HTTP through proxy
+        options.method = "GET"
+        options.path = urlStr
+        options.hostname = proxy.hostname
+        options.port = proxy.port
+        if (proxy.auth) {
+          options.headers["Proxy-Authorization"] = "Basic " + Buffer.from(proxy.auth).toString("base64")
+        }
+        const req = http.request(options, resolve)
+        req.on("error", reject)
+        req.on("timeout", () => { req.destroy(); reject(new Error("Request timeout")) })
+        req.end()
+      }
+    } else {
+      // Direct connection
+      options.method = "GET"
+      options.path = targetUrl.pathname + targetUrl.search
+      if (targetUrl.protocol === "https:") {
+        options.rejectUnauthorized = true
+        const req = https.request(options, resolve)
+        req.on("error", reject)
+        req.on("timeout", () => { req.destroy(); reject(new Error("Request timeout")) })
+        req.end()
+      } else {
+        const req = http.request(options, resolve)
+        req.on("error", reject)
+        req.on("timeout", () => { req.destroy(); reject(new Error("Request timeout")) })
+        req.end()
+      }
+    }
+  })
 }
 
 // --- Progress Reporter -----------------------------------------------------
@@ -113,7 +234,6 @@ class ProgressReporter {
 
   update(downloaded, total) {
     const pct = total > 0 ? Math.round((downloaded / total) * 100) : 0
-    // Only send every ~2% to avoid flooding IPC
     if (Math.abs(pct - this._last) >= 2 || pct === 100) {
       this._maxPercent = Math.max(this._maxPercent, pct)
       this._last = this._maxPercent
@@ -134,39 +254,40 @@ class ProgressReporter {
 
 function downloadFile(url, dest, reporter) {
   return new Promise((resolve, reject) => {
-    const proto = url.startsWith("https") ? https : http
-    proto.get(url, { timeout: 30000 }, (res) => {
-      // Follow redirects
-      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        res.resume()
-        return downloadFile(res.headers.location, dest, reporter).then(resolve).catch(reject)
-      }
-      if (res.statusCode !== 200) {
-        res.resume()
-        return reject(new Error(`HTTP ${res.statusCode}`))
-      }
+    makeRequest(url)
+      .then((res) => {
+        // Follow redirects
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          res.resume()
+          return downloadFile(res.headers.location, dest, reporter).then(resolve).catch(reject)
+        }
+        if (res.statusCode !== 200) {
+          res.resume()
+          return reject(new Error(`HTTP ${res.statusCode}`))
+        }
 
-      const total = parseInt(res.headers["content-length"] || "0", 10)
-      let downloaded = 0
-      const file = createWriteStream(dest)
+        const total = parseInt(res.headers["content-length"] || "0", 10)
+        let downloaded = 0
+        const file = createWriteStream(dest)
 
-      res.on("data", (chunk) => {
-        downloaded += chunk.length
-        reporter.update(downloaded, total)
-      })
+        res.on("data", (chunk) => {
+          downloaded += chunk.length
+          reporter.update(downloaded, total)
+        })
 
-      res.pipe(file)
-      file.on("finish", () => {
-        file.close()
-        reporter.done()
-        resolve()
+        res.pipe(file)
+        file.on("finish", () => {
+          file.close()
+          reporter.done()
+          resolve()
+        })
+        file.on("error", (err) => {
+          file.close()
+          try { unlinkSync(dest) } catch {}
+          reject(err)
+        })
       })
-      file.on("error", (err) => {
-        file.close()
-        unlinkSync(dest)
-        reject(err)
-      })
-    }).on("error", reject)
+      .catch(reject)
   })
 }
 
@@ -174,13 +295,12 @@ function extractZip(zipPath, destDir, filter) {
   return new Promise((resolve, reject) => {
     try {
       if (IS_WIN) {
-        // Use tar (Windows 10+ built-in) or PowerShell
         const cmd = `tar -xf "${zipPath}" -C "${destDir}" 2>nul`
         execSync(cmd, { stdio: "pipe", timeout: 60000 })
       } else {
         execSync(`unzip -o "${zipPath}" -d "${destDir}" 2>/dev/null`, { stdio: "pipe", timeout: 60000 })
       }
-      unlinkSync(zipPath)
+      try { unlinkSync(zipPath) } catch {}
       resolve()
     } catch (err) {
       try { unlinkSync(zipPath) } catch {}
@@ -222,7 +342,6 @@ async function installPipScanner(def, reporter) {
   } catch {} // not installed, proceed
 
   reporter.update(0, 100)
-  // Simulate progress for pip (we can't track pip's real progress)
   const progressInterval = setInterval(() => {
     reporter.update(50, 100)
   }, 2000)
@@ -241,10 +360,8 @@ async function installPipScanner(def, reporter) {
 }
 
 async function installZipExtractScanner(def, binDir, reporter) {
-  const { join } = require("path")
-
   if (def.destDir === "dependency-check") {
-    const dcDir = join(require("path").dirname(binDir), "dependency-check")
+    const dcDir = join(dirname(binDir), "dependency-check")
     const dcBat = join(dcDir, "bin", "dependency-check.bat")
     const dcSh = join(dcDir, "bin", "dependency-check.sh")
     if (existsSync(dcBat) || existsSync(dcSh)) {
@@ -259,7 +376,7 @@ async function installZipExtractScanner(def, binDir, reporter) {
   await downloadFile(def.url, tmp + ext, reporter)
 
   reporter.update(90, 100)
-  const destDir = join(require("path").dirname(binDir), def.destDir)
+  const destDir = join(dirname(binDir), def.destDir)
   if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true })
 
   if (ext === ".zip") {
@@ -278,6 +395,9 @@ async function installZipExtractScanner(def, binDir, reporter) {
 async function installScanner(name, toolsDir, sendProgress) {
   const def = SCANNER_DEFS[name]
   if (!def) return { ok: false, error: `Unknown scanner: ${name}` }
+
+  // Apply proxy settings before every install attempt
+  applyProxyFromEnv()
 
   const reporter = new ProgressReporter(sendProgress)
   const binDir = join(toolsDir, "bin")

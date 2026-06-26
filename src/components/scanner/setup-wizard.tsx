@@ -116,6 +116,7 @@ export function SetupWizard({ open, onFinish }: WizardProps) {
   const [error, setError] = useState<string | null>(null)
   const [isElectron, setIsElectron] = useState(false)
   const abortRef = useRef(false)
+  const maxWeightedPctRef = useRef(0)
 
   useEffect(() => {
     setIsElectron(typeof window !== "undefined" && !!window.vulnguard?.downloadScanner)
@@ -136,6 +137,7 @@ export function SetupWizard({ open, onFinish }: WizardProps) {
     setCompleted([])
     setFailed([])
     abortRef.current = false
+    maxWeightedPctRef.current = 0
 
     const scanners = getScannersForCategories(selectedCategories)
     let hasError = false
@@ -237,21 +239,21 @@ export function SetupWizard({ open, onFinish }: WizardProps) {
   if (step === "welcome") {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/95 backdrop-blur-sm">
-        <div className="w-full max-w-lg mx-auto p-6">
-          <div className="text-center space-y-4 mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary/10">
-              <Shield className="h-8 w-8 text-primary" />
+        <div className="w-full max-w-xl mx-auto p-8">
+          <div className="text-center space-y-5 mb-10">
+            <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-primary/10">
+              <Shield className="h-10 w-10 text-primary" />
             </div>
-            <h1 className="text-xl font-bold">欢迎使用 VulnGuard</h1>
-            <p className="text-sm text-muted-foreground max-w-sm mx-auto">
+            <h1 className="text-2xl font-bold">欢迎使用 VulnGuard</h1>
+            <p className="text-sm text-muted-foreground max-w-md mx-auto">
               首次使用需要安装扫描引擎。选择您需要的扫描能力，按需安装，避免占用不必要的磁盘空间。
             </p>
           </div>
 
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-3 max-w-xs mx-auto">
             <button
               onClick={() => setStep("select")}
-              className="rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+              className="rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
             >
               开始配置
             </button>
@@ -279,14 +281,14 @@ export function SetupWizard({ open, onFinish }: WizardProps) {
       }, 0)
 
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/95 backdrop-blur-sm overflow-y-auto py-8">
-        <div className="w-full max-w-lg mx-auto p-6">
-          <div className="text-center space-y-2 mb-6">
-            <h2 className="text-lg font-bold">选择扫描能力</h2>
-            <p className="text-xs text-muted-foreground">按分类勾选您需要的扫描器，已选约 {totalSize} MB</p>
+      <div className="fixed inset-0 z-50 flex items-start justify-center bg-background/95 backdrop-blur-sm overflow-y-auto py-10">
+        <div className="w-full max-w-2xl mx-auto p-8">
+          <div className="text-center space-y-2 mb-8">
+            <h2 className="text-xl font-bold">选择扫描能力</h2>
+            <p className="text-sm text-muted-foreground">按分类勾选您需要的扫描器，已选约 {totalSize} MB</p>
           </div>
 
-          <div className="space-y-2 mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-8">
             {CATEGORIES.map((cat) => {
               const Icon = cat.icon
               const isSelected = selectedCategories.has(cat.key)
@@ -295,14 +297,14 @@ export function SetupWizard({ open, onFinish }: WizardProps) {
                 <button
                   key={cat.key}
                   onClick={() => toggleCategory(cat.key)}
-                  className={`w-full flex items-start gap-3 rounded-xl border p-3 text-left transition-all ${
+                  className={`w-full flex items-start gap-3 rounded-xl border p-4 text-left transition-all ${
                     isSelected
                       ? "border-primary/40 bg-primary/5"
                       : "border-border hover:border-muted-foreground/30"
                   }`}
                 >
-                  <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${cat.bgColor}`}>
-                    <Icon className={`h-4 w-4 ${cat.color}`} />
+                  <div className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${cat.bgColor}`}>
+                    <Icon className={`h-5 w-5 ${cat.color}`} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
@@ -336,17 +338,17 @@ export function SetupWizard({ open, onFinish }: WizardProps) {
             })}
           </div>
 
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-3 max-w-sm mx-auto">
             <button
               onClick={startInstall}
               disabled={selectedCategories.size === 0}
-              className="rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               安装已选 ({getScannersForCategories(selectedCategories).length} 个)
             </button>
             <button
               onClick={onFinish}
-              className="rounded-lg bg-secondary px-4 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              className="rounded-lg bg-secondary px-4 py-2.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
               稍后再说
             </button>
@@ -363,25 +365,28 @@ export function SetupWizard({ open, onFinish }: WizardProps) {
     const doneCount = completed.length + failed.length
 
     // 加权累计进度：已完成的算 (doneCount/total)*100%，当前的在加 (current/total)%
-    const weightedPct = total > 0
+    // 使用单调递增逻辑：进度条只增不减，消除回退
+    const rawPct = total > 0
       ? Math.min(100, (doneCount / total) * 100 + (progress / total))
       : 0
+    const weightedPct = Math.max(rawPct, maxWeightedPctRef.current)
+    maxWeightedPctRef.current = weightedPct
 
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/95 backdrop-blur-sm">
-        <div className="w-full max-w-md mx-auto p-6">
-          <div className="text-center space-y-3 mb-6">
-            <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-primary/10">
-              <Download className="h-6 w-6 text-primary animate-bounce" />
+        <div className="w-full max-w-xl mx-auto p-8">
+          <div className="text-center space-y-4 mb-8">
+            <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-primary/10">
+              <Download className="h-7 w-7 text-primary animate-bounce" />
             </div>
-            <h2 className="text-base font-bold">正在安装扫描器</h2>
-            <p className="text-xs text-muted-foreground">
+            <h2 className="text-lg font-bold">正在安装扫描器</h2>
+            <p className="text-sm text-muted-foreground">
               {doneCount}/{total} — {currentLabel}
             </p>
           </div>
 
           {/* 加权累计进度条（只增不减，消除回退） */}
-          <div className="h-2 w-full overflow-hidden rounded-full bg-secondary mb-4">
+          <div className="h-3 w-full overflow-hidden rounded-full bg-secondary mb-5">
             <div
               className="h-full rounded-full bg-primary transition-all duration-500 ease-out"
               style={{ width: `${Math.max(1, weightedPct)}%` }}
@@ -389,23 +394,23 @@ export function SetupWizard({ open, onFinish }: WizardProps) {
           </div>
 
           {error && (
-            <div className="flex items-center gap-2 rounded-lg bg-destructive/10 p-2 text-xs text-destructive mb-3">
-              <AlertCircle className="h-3 w-3 shrink-0" />
+            <div className="flex items-center gap-2 rounded-lg bg-destructive/10 p-3 text-sm text-destructive mb-4">
+              <AlertCircle className="h-4 w-4 shrink-0" />
               {error}
             </div>
           )}
 
           {/* Completed/failed list */}
-          <div className="space-y-1 max-h-32 overflow-y-auto">
+          <div className="space-y-1.5 max-h-40 overflow-y-auto">
             {completed.map((name) => (
-              <div key={name} className="flex items-center gap-2 text-xs text-emerald-500">
-                <CheckCircle2 className="h-3 w-3" />
+              <div key={name} className="flex items-center gap-2 text-sm text-emerald-500">
+                <CheckCircle2 className="h-3.5 w-3.5" />
                 {name}
               </div>
             ))}
             {failed.map((name) => (
-              <div key={name} className="flex items-center gap-2 text-xs text-destructive">
-                <AlertCircle className="h-3 w-3" />
+              <div key={name} className="flex items-center gap-2 text-sm text-destructive">
+                <AlertCircle className="h-3.5 w-3.5" />
                 {name}
               </div>
             ))}
@@ -418,18 +423,18 @@ export function SetupWizard({ open, onFinish }: WizardProps) {
   // ── Done step ──
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/95 backdrop-blur-sm">
-      <div className="w-full max-w-sm mx-auto p-6 text-center space-y-4">
-        <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-emerald-500/10">
-          <CheckCircle2 className="h-7 w-7 text-emerald-500" />
+      <div className="w-full max-w-lg mx-auto p-8 text-center space-y-5">
+        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-emerald-500/10">
+          <CheckCircle2 className="h-8 w-8 text-emerald-500" />
         </div>
-        <h2 className="text-base font-bold">配置完成</h2>
-        <div className="text-xs text-muted-foreground space-y-1">
+        <h2 className="text-xl font-bold">配置完成</h2>
+        <div className="text-sm text-muted-foreground space-y-1">
           {completed.length > 0 && <p>✓ {completed.length} 个扫描器安装成功</p>}
           {failed.length > 0 && <p className="text-destructive">✗ {failed.length} 个安装失败，可稍后在设置中重试</p>}
         </div>
         <button
           onClick={onFinish}
-          className="rounded-lg bg-primary px-6 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+          className="rounded-lg bg-primary px-8 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
         >
           开始使用
         </button>

@@ -71,6 +71,9 @@ ipcMain.handle("get-scanner-status", () => {
 
 ipcMain.handle("download-scanner", async (_event, scannerName) => {
   try {
+    // Ensure the data dir is known to the downloader (for proxy settings lookup)
+    process.env.VULNGUARD_DATA_DIR = DATA_DIR
+    applyProxyFromSettings()
     const result = await installScanner(scannerName, TOOLS_DIR, (progress) => {
       // 通过 IPC 回传下载进度给渲染进程
       if (mainWindow && !mainWindow.isDestroyed()) {
