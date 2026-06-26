@@ -85,6 +85,7 @@ ipcMain.handle("download-scanner", async (_event, scannerName) => {
 
 ipcMain.handle("check-for-updates", async () => {
   try {
+    applyProxyFromSettings()
     const result = await autoUpdater.checkForUpdates()
     return { ok: true, canUpdate: !!result?.updateInfo, version: result?.updateInfo?.version }
   } catch (e) {
@@ -94,6 +95,7 @@ ipcMain.handle("check-for-updates", async () => {
 
 ipcMain.handle("start-update", async () => {
   try {
+    applyProxyFromSettings()
     await autoUpdater.downloadUpdate()
     return { ok: true }
   } catch (e) {
@@ -338,6 +340,31 @@ async function waitForServer(maxRetries = 60) {
 }
 
 // ─── Auto-Updater ──────────────────────────────────────────────────
+
+/**
+ * 从持久化设置中读取代理配置并设置环境变量，
+ * 使 autoUpdater.checkForUpdates / downloadUpdate 通过代理访问 GitHub。
+ */
+function applyProxyFromSettings() {
+  try {
+    const settingsPath = path.join(DATA_DIR, "settings.json")
+    if (!fs.existsSync(settingsPath)) return
+
+    const raw = fs.readFileSync(settingsPath, "utf-8")
+    const settings = JSON.parse(raw)
+
+    if (settings.proxyEnabled) {
+      if (settings.httpProxy) process.env.HTTP_PROXY = settings.httpProxy
+      if (settings.httpsProxy) process.env.HTTPS_PROXY = settings.httpsProxy
+      console.log("[auto-updater] proxy configured from settings")
+    } else {
+      delete process.env.HTTP_PROXY
+      delete process.env.HTTPS_PROXY
+    }
+  } catch (e) {
+    // 设置文件不存在或解析失败时静默跳过
+  }
+}
 
 function setupAutoUpdater() {
   if (IS_DEV) return
