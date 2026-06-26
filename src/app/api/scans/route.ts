@@ -1,12 +1,28 @@
 import { NextResponse } from "next/server"
-import { getAllSessions, toScanSummary, createSession, updateSession, clearSessions, clearAllUploads } from "@/lib/scanner/scan-store"
+import { getAllSessions, toScanSummary, createSession, updateSession, clearSessions, clearAllUploads, deleteSession } from "@/lib/scanner/scan-store"
 import type { ScannerEngine } from "@/lib/scanner/composite"
 import { requireAuth } from "@/lib/api/auth"
+import { getSettings } from "@/lib/settings-store"
+
+/** 根据 retentionDays 设置清理过期扫描 */
+function cleanExpiredScans() {
+  const { retentionDays } = getSettings()
+  if (retentionDays <= 0) return
+  const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000
+  const sessions = getAllSessions()
+  for (const s of sessions) {
+    const created = new Date(s.createdAt).getTime()
+    if (!isNaN(created) && created < cutoff) {
+      deleteSession(s.id)
+    }
+  }
+}
 
 export async function GET(request: Request) {
   const auth = requireAuth(request)
   if (auth) return auth
 
+  cleanExpiredScans()
   const scans = getAllSessions().map(toScanSummary)
   await new Promise(r => setTimeout(r, 200))
   return NextResponse.json(scans)
@@ -40,16 +56,13 @@ export async function POST(request: Request) {
       ? String(body.projectName).replace(/[/\\:]/g, "").slice(0, 200)
       : undefined
 
-    // Incremental mode flag
-    const incremental = body.incremental === true
-
     // Create scan session (scan starts when detail page loads)
     const session = createSession(mode, target, { totalFiles, skippedFiles, projectName })
-    updateSession(session.id, { status: "pending", scannerEngine: engine, incremental })
+    updateSession(session.id, { status: "pending", scannerEngine: engine })
 
     // Return immediately with the session ID
     return NextResponse.json(
-      { id: session.id, status: "pending", target: session.target, type: session.type, engine, incremental },
+      { id: session.id, status: "pending", target: session.target, type: session.type, engine },
       { status: 201 },
     )
   } catch (err) {

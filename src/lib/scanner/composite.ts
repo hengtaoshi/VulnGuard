@@ -8,6 +8,8 @@ import type { TargetAnalysis } from "./target-analyzer"
 import { aggregateScanResults } from "./ai-aggregator"
 import { isLlmAvailable } from "./llm-client"
 import { filterIgnored, getAllIgnoreRules } from "../ignore-rules"
+import { getSettings } from "../settings-store"
+import { translateVulnerabilities } from "./chinese-descriptions"
 import { execSync } from "child_process"
 import { join } from "path"
 import { writeFileSync, existsSync, mkdirSync } from "fs"
@@ -46,27 +48,6 @@ function makeScannerStatuses(scanners: { name: string; displayName: string; cate
   }))
 }
 
-// ─── 增量扫描：Git diff 检测 ────────────────────────────────────────────────
-
-/** 检测 git 变更文件。非 git 仓库或无变更时返回 null。 */
-function getChangedFiles(targetPath: string): string[] | null {
-  try {
-    execSync('git rev-parse --git-dir', { cwd: targetPath, stdio: 'pipe', timeout: 5000 })
-  } catch { return null }
-  try {
-    execSync('git rev-parse HEAD~1', { cwd: targetPath, stdio: 'pipe', timeout: 5000 })
-  } catch { return null }
-  try {
-    const result = execSync('git diff --name-only HEAD~1', { cwd: targetPath, stdio: 'pipe', timeout: 10000, encoding: 'utf-8' })
-    const files = result.toString().split('\n').map(f => f.trim()).filter(Boolean)
-    if (files.length === 0) return null
-    // ponytail: filter out paths with shell metacharacters ($, `, ;, |, etc.)
-    const SAFE_PATH = /^[\w./\\\- ()]+$/
-    const safe = files.filter(f => SAFE_PATH.test(f))
-    return safe.length > 0 ? safe : null
-  } catch { return null }
-}
-
 // ─── 规则驱动的扫描器选择 ─────────────────────────────────────────────────
 
 function selectScannersByRules(
@@ -94,8 +75,7 @@ function selectScannersByRules(
   }
 
   // JS/TS
-  if (configNames.has("hasPackageLock") || configNames.has("hasPackageJson") ||
-      configNames.has("hasPnpmLock") || configNames.has("hasYarnLock")) {
+  if (configNames.has("hasPackageLock") || configNames.has("hasPackageJson")) {
     selected.push("npm-audit")
   }
 
@@ -210,7 +190,6 @@ async function executeScanners(
   scannerNames: string[],
   targetPath: string,
   sessionId?: string,
-  changedFiles?: string[],
 ): Promise<CompositeResult> {
   const scannerMap = new Map(allScanners.map(s => [s.name, s]))
   const orderedScanners = scannerNames
@@ -320,12 +299,13 @@ async function executeScanners(
       }
     }, 5000)
 
-    const MAX_CONCURRENT = 5
+    const { concurrentScanners } = getSettings()
+    const MAX_CONCURRENT = concurrentScanners
 
     const runOneScanner = async (s: Scanner): Promise<void> => {
       if (sessionId) addLog(sessionId, "scanner", "info", `Starting ${s.displayName}`, undefined, s.name)
       scannerStartTimes.set(s.name, Date.now())
-      const result = await s.scan(targetPath, changedFiles).catch(err => ({
+      const result = await s.scan(targetPath).catch(err => ({
         vulnerabilities: [], totalChecks: 0,
         errors: [(err as Error).message], scannerName: s.name,
       }))
@@ -364,6 +344,12 @@ async function executeScanners(
       allResults.push(result)
     }
 
+    // 超时控制
+    const { maxDuration } = getSettings()
+    const deadline = Date.now() + maxDuration * 60 * 1000
+    const timeoutPromise = (ms: number) => new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`扫描超时（${maxDuration}分钟）`)), ms))
+
     // Sliding-window concurrency limit
     const queue = [...groupScanners]
     const inFlight = new Set<Promise<void>>()
@@ -373,7 +359,12 @@ async function executeScanners(
         inFlight.add(p)
       }
       if (inFlight.size > 0) {
-        await Promise.race(Array.from(inFlight))
+        const remaining = deadline - Date.now()
+        if (remaining <= 0) throw new Error(`扫描超时（${maxDuration}分钟）`)
+        await Promise.race([
+          ...Array.from(inFlight),
+          timeoutPromise(Math.max(remaining, 5000)),
+        ])
       }
     }
     clearInterval(heartbeat)
@@ -398,7 +389,12 @@ async function executeScanners(
       }
     }
   }
-  const vulnerabilities = Array.from(vulnerabilityMap.values())
+  let vulnerabilities = Array.from(vulnerabilityMap.values())
+
+  // ── 中文翻译 ────────────────────────────────────────────────────────
+  // 将漏洞描述翻译为中文，保留未匹配规则的原文
+  vulnerabilities = translateVulnerabilities(vulnerabilities)
+
   const totalChecks = allResults.reduce((sum, r) => sum + r.totalChecks, 0)
 
   const finalScannerResults = allResults.map(result => ({
@@ -423,7 +419,6 @@ export async function runCompositeScan(
   mode: "url" | "source" = "source",
   sessionId?: string,
   engine: ScannerEngine = "ai",
-  incremental?: boolean,
 ): Promise<CompositeResult> {
   const allScanners = getAllScanners()
   const availableScanners = getAvailableScanners()
@@ -498,20 +493,6 @@ export async function runCompositeScan(
     }
   }
 
-  // ── Phase 0.5: 增量扫描检测 ──────────────────────────────────────
-  let changedFiles: string[] | undefined
-  if (incremental) {
-    changedFiles = getChangedFiles(targetPath) ?? undefined
-    if (changedFiles && changedFiles.length > 0) {
-      if (sessionId) addLog(sessionId, "system", "info", `⚡ Incremental scan: ${changedFiles.length} files changed`)
-    } else {
-      if (sessionId) addLog(sessionId, "system", "info", changedFiles === undefined
-        ? "⚡ Incremental: not a git repo or no prior commit, falling back to full scan"
-        : "⚡ No files changed since last commit")
-      incremental = false
-    }
-  }
-
   let selectedScanners: string[] = []
 
   // 扫描器选择：始终使用规则引擎（确定性），不用 AI
@@ -529,15 +510,8 @@ export async function runCompositeScan(
   const statuses = makeScannerStatuses(selectedScannerObjects)
   setProgress(0, `📋 Rules matched: ${selectedScanners.length} scanners selected`, statuses)
 
-  // 增量模式：只跑支持文件级过滤的扫描器
-  if (incremental && changedFiles) {
-    const incrementalOk = new Set(["semgrep", "bandit", "npm-audit", "pip-audit"])
-    selectedScanners = selectedScanners.filter(s => incrementalOk.has(s))
-    if (sessionId) addLog(sessionId, "system", "info", `⚡ Incremental: running ${selectedScanners.join(", ")}`)
-  }
-
   // ── Phase 2: 执行扫描器 ─────────────────────────────────────────────
-  const result = await executeScanners(allScanners, selectedScanners, targetPath, sessionId, changedFiles)
+  const result = await executeScanners(allScanners, selectedScanners, targetPath, sessionId)
 
   // ── Phase 3: 误报过滤（.vulnguard-ignore + UI 标记）────────────────
   const { filtered: filteredVulns, ignoredCount } = filterIgnored(result.vulnerabilities)
@@ -560,7 +534,8 @@ export async function runCompositeScan(
   )
 
   // ── Phase 4: AI 聚合（跨引擎关联 + 假阳性检测）──────────────────────
-  if (sessionId && isLlmAvailable()) {
+  const settings = getSettings()
+  if (sessionId && isLlmAvailable() && settings.aiAggregation) {
     try {
       addLog(sessionId, "aggregation", "info", "🧠 AI aggregating scan results...")
 

@@ -9,12 +9,13 @@ import { requireAuth } from "@/lib/api/auth"
  */
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
+  const { id } = await params
   const auth = requireAuth(request)
   if (auth) return auth
 
-  const session = getSession(params.id)
+  const session = getSession(id)
   if (!session) {
     return NextResponse.json({ error: "Scan not found" }, { status: 404 })
   }
@@ -24,7 +25,7 @@ export async function GET(
   }
 
   const result = compareWithBaseline(
-    params.id,
+    id,
     session.target,
     session.vulnerabilities,
   )

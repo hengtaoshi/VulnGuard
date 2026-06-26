@@ -11,6 +11,9 @@
  *
  * 依赖: CodeQL CLI (codeql-win64.zip → tools/bin/codeql/)
  * 下载: https://github.com/github/codeql-cli-binaries/releases
+ *
+ * 查询包: 通过 codeql pack download 从 ghcr.io 下载，或 analyze 时
+ *         使用 --download 标志自动下载。无需克隆 github/codeql 仓库。
  */
 
 import { execAsync } from "./exec"
@@ -22,23 +25,22 @@ import type { ScanResult } from "./types"
 
 const CODEQL_DIR = join(process.cwd(), "tools", "bin", "codeql", "codeql")
 
-// 预下载到 tools/codeql-queries/ 的查询文件（浅克隆 github/codeql）
-// 避免运行时从 ghcr.io 下载（国内网络不可达）
-const CODEQL_REPO = join(process.cwd(), "tools", "codeql-queries")
-const QL_SUITE = (lang: string) =>
-  join(CODEQL_REPO, lang, "ql", "src", "codeql-suites", `${lang}-security-extended.qls`)
+// CodeQL 查询包缓存路径（由 codeql pack download 预下载）
+const CODEQL_PACKAGES = join(require("os").homedir(), ".codeql", "packages")
 
-const LANGUAGE_QUERY_PATH: Record<string, string> = {
-  javascript: QL_SUITE("javascript"),
-  typescript: QL_SUITE("javascript"),
-  python: QL_SUITE("python"),
-  java: QL_SUITE("java"),
-  go: QL_SUITE("go"),
-  csharp: QL_SUITE("csharp"),
-  c: QL_SUITE("cpp"),
-  cpp: QL_SUITE("cpp"),
-  swift: QL_SUITE("swift"),
-  ruby: QL_SUITE("ruby"),
+// CodeQL 查询套件 — 通过 pack 名称引用，运行时自动下载
+// 格式: {pack-name}:{suite-path-within-pack}
+const LANGUAGE_QUERY_SUITE: Record<string, string> = {
+  javascript: "codeql/javascript-queries:codeql-suites/javascript-security-extended.qls",
+  typescript: "codeql/javascript-queries:codeql-suites/javascript-security-extended.qls",
+  python: "codeql/python-queries:codeql-suites/python-security-extended.qls",
+  java: "codeql/java-queries:codeql-suites/java-security-extended.qls",
+  go: "codeql/go-queries:codeql-suites/go-security-extended.qls",
+  csharp: "codeql/csharp-queries:codeql-suites/csharp-security-extended.qls",
+  c: "codeql/cpp-queries:codeql-suites/cpp-security-extended.qls",
+  cpp: "codeql/cpp-queries:codeql-suites/cpp-security-extended.qls",
+  swift: "codeql/swift-queries:codeql-suites/swift-security-extended.qls",
+  ruby: "codeql/ruby-queries:codeql-suites/ruby-security-extended.qls",
 }
 
 const CODEQL_BIN = join(CODEQL_DIR, "codeql.exe")
@@ -234,19 +236,10 @@ export async function runCodeqlScan(targetPath: string): Promise<ScanResult> {
 
     // 去重处理的语言（JS/TS 共用 javascript 查询）
     const processedLangs = new Set<string>()
-    if (!existsSync(CODEQL_REPO)) {
-      errors.push("CodeQL: query repository not found at tools/codeql-queries (run git clone --depth 1 --sparse https://github.com/github/codeql.git tools/codeql-queries)")
-    }
 
     for (const lang of languages) {
-      const qlLang = LANGUAGE_QUERY_PATH[lang] ? lang : null
+      const qlLang = LANGUAGE_QUERY_SUITE[lang] ? lang : null
       if (!qlLang || processedLangs.has(qlLang)) continue
-
-      const suitePath = LANGUAGE_QUERY_PATH[qlLang]
-      if (!suitePath || !existsSync(suitePath)) {
-        errors.push(`CodeQL ${qlLang}: query suite not found at ${suitePath}`)
-        continue
-      }
       processedLangs.add(qlLang)
 
       // 创建数据库
@@ -260,11 +253,12 @@ export async function runCodeqlScan(targetPath: string): Promise<ScanResult> {
         continue
       }
 
-      // 运行查询 — 使用本地 .qls 文件 + --search-path 指向查询仓库
+      // 运行查询 — 使用本地包缓存（跳过 --download 避免 SSL 代理问题）
+      const suiteRef = LANGUAGE_QUERY_SUITE[qlLang]
       const outputFile = join(resultDir, `${qlLang}.sarif`)
       try {
         await execAsync(
-          `"${CODEQL_BIN}" database analyze "${dbDir}-${qlLang}" --search-path="${CODEQL_REPO}" --format=sarif-latest --output="${outputFile}" "${suitePath}"`,
+          `"${CODEQL_BIN}" database analyze "${dbDir}-${qlLang}" --search-path="${CODEQL_PACKAGES}" --format=sarif-latest --output="${outputFile}" "${suiteRef}"`,
           { timeout: 600000 },
         )
       } catch (err) {

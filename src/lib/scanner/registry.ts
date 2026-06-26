@@ -45,7 +45,7 @@ const scanners: Scanner[] = [
     displayName: "Semgrep",
     category: "sast",
     isAvailable: () => resolveBin("semgrep", "semgrep.exe") !== null,
-    scan: (targetPath: string, changedFiles?: string[]) => runSemgrepScan(targetPath, changedFiles).then(r => ({
+    scan: (targetPath: string) => runSemgrepScan(targetPath).then(r => ({
       ...r,
       errors: [],
       scannerName: "semgrep",

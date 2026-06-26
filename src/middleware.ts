@@ -30,5 +30,8 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: "/(.*)",
+  matcher: [
+    // 排除上传接口 — 避免 Next.js 15 缓冲请求体导致 10MB 限制
+    "/((?!api/upload).*)",
+  ],
 }

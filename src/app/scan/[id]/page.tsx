@@ -711,24 +711,9 @@ function ScanLogViewer({ logs }: { logs?: import("@/lib/api/types").LogEntry[] }
   )
 }
 
-// ─── Baseline comparison helpers ──────────────────────────────────────────
-
-type BaselineStatus = "new" | "existing" | "regression"
-
-function baselineBadge(status?: BaselineStatus) {
-  if (!status) return null
-  const styles: Record<string, { label: string; class: string }> = {
-    new: { label: "新增", class: "bg-red-500/10 text-red-500 border-red-500/30" },
-    existing: { label: "已存在", class: "bg-amber-500/10 text-amber-500 border-amber-500/30" },
-    regression: { label: "回归", class: "bg-destructive/10 text-destructive border-destructive/30" },
-  }
-  const s = styles[status]
-  return <Badge variant="outline" className={`${s.class} text-[10px]`}>{s.label}</Badge>
-}
-
 // ─── Report Section: Vulnerability Findings (by severity) ──────────────────
 
-const SeveritySection = ({ severity, vulnerabilities, scanId, baselineMap }: { severity: string; vulnerabilities: ScanDetail["vulnerabilities"]; scanId: string; baselineMap?: Map<string, BaselineStatus> }) => {
+const SeveritySection = ({ severity, vulnerabilities, scanId }: { severity: string; vulnerabilities: ScanDetail["vulnerabilities"]; scanId: string }) => {
   const [expanded, setExpanded] = useState(false)
   const theme: Record<string, { icon: React.ReactNode; border: string; header: string; text: string }> = {
     Critical: { icon: <AlertTriangle className="h-4 w-4" />, border: "border-destructive/20", header: "bg-destructive/10 text-destructive border-b border-destructive/20", text: "text-destructive" },
@@ -760,7 +745,6 @@ const SeveritySection = ({ severity, vulnerabilities, scanId, baselineMap }: { s
                 <ChevronDown className="h-3.5 w-3.5 text-muted-foreground group-open:rotate-180 transition-transform shrink-0" />
                 <SeverityBadge severity={vuln.severity} />
                 <span className="text-sm font-medium flex-1">{vuln.name}</span>
-                {baselineMap && baselineBadge(baselineMap.get(vuln.id))}
                 {vuln.source && (
                   <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border ${categoryThemes[scannerCategoryToKey(vuln.source)]?.border || "border-border/50"}`}>
                     {scannerIcons[vuln.source] || defaultScannerIcon}
@@ -859,22 +843,13 @@ function scannerCategoryToKey(source: string): string {
   return map[source] || "web"
 }
 
-function VulnerabilityDetails({ vulnerabilities, scanId, baselineMap }: { vulnerabilities: ScanDetail["vulnerabilities"]; scanId: string; baselineMap?: Map<string, BaselineStatus> }) {
-  const [filterMode, setFilterMode] = useState<"all" | "new" | "existing">("all")
-
-  let filtered = vulnerabilities
-  if (baselineMap && filterMode !== "all") {
-    filtered = vulnerabilities.filter(v => baselineMap.get(v.id) === filterMode)
-  }
-
+function VulnerabilityDetails({ vulnerabilities, scanId }: { vulnerabilities: ScanDetail["vulnerabilities"]; scanId: string }) {
   const groups: Record<string, ScanDetail["vulnerabilities"]> = { Critical: [], High: [], Medium: [], Low: [] }
-  for (const v of filtered) {
+  for (const v of vulnerabilities) {
     if (groups[v.severity]) groups[v.severity].push(v)
   }
 
   const total = vulnerabilities.length
-  const newCount = baselineMap ? Array.from(baselineMap.values()).filter(s => s === "new").length : 0
-  const existingCount = baselineMap ? Array.from(baselineMap.values()).filter(s => s === "existing").length : 0
 
   return (
     <div className="space-y-4">
@@ -891,23 +866,6 @@ function VulnerabilityDetails({ vulnerabilities, scanId, baselineMap }: { vulner
         </div>
       </div>
 
-      {baselineMap && (
-        <div className="flex items-center gap-2">
-          <button onClick={() => setFilterMode("all")}
-            className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${filterMode === "all" ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
-            全部 ({total})
-          </button>
-          <button onClick={() => setFilterMode("new")}
-            className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${filterMode === "new" ? "bg-red-500/10 text-red-500" : "text-muted-foreground hover:text-foreground"}`}>
-            新增 ({newCount})
-          </button>
-          <button onClick={() => setFilterMode("existing")}
-            className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${filterMode === "existing" ? "bg-amber-500/10 text-amber-500" : "text-muted-foreground hover:text-foreground"}`}>
-            已存在 ({existingCount})
-          </button>
-        </div>
-      )}
-
       {total === 0 && (
         <Card className="border-emerald-500/20 bg-emerald-500/[0.02]">
           <CardContent className="flex items-center gap-3 p-6">
@@ -921,7 +879,7 @@ function VulnerabilityDetails({ vulnerabilities, scanId, baselineMap }: { vulner
       )}
 
       {["Critical", "High", "Medium", "Low"].map(sev => (
-        <SeveritySection key={sev} severity={sev} vulnerabilities={groups[sev] || []} scanId={scanId} baselineMap={baselineMap} />
+        <SeveritySection key={sev} severity={sev} vulnerabilities={groups[sev] || []} scanId={scanId} />
       ))}
     </div>
   )
@@ -1142,7 +1100,7 @@ function SarifDownloadButton({ scan }: { scan: ScanDetail }) {
 
 // ─── Main Report Template ───────────────────────────────────────────────────────
 
-function SecurityReport({ scan, baselineMap }: { scan: ScanDetail; baselineMap?: Map<string, BaselineStatus> }) {
+function SecurityReport({ scan }: { scan: ScanDetail }) {
   const vulnerabilities = scan.vulnerabilities ?? []
   const aggregation: AggregationSummary | null = scan.aiAggregation || null
   const plan = scan.orchestratorPlan
@@ -1255,7 +1213,7 @@ function SecurityReport({ scan, baselineMap }: { scan: ScanDetail; baselineMap?:
 
       {/* Section 4: Vulnerability Details */}
       <div id="findings" className={sectionStyle}>
-        <VulnerabilityDetails vulnerabilities={vulnerabilities} scanId={scan?.id || ""} baselineMap={baselineMap} />
+        <VulnerabilityDetails vulnerabilities={vulnerabilities} scanId={scan?.id || ""} />
       </div>
 
       {/* Divider */}
@@ -1290,7 +1248,6 @@ export default function ScanDetailPage() {
   const [scan, setScan] = useState<ScanDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
-  const [baselineMap, setBaselineMap] = useState<Map<string, BaselineStatus> | undefined>(undefined)
   const sseRef = useRef<EventSource | null>(null)
 
   useEffect(() => {
@@ -1373,20 +1330,6 @@ export default function ScanDetailPage() {
     }
   }, [params.id])
 
-  // Fetch baseline comparison when scan completes
-  useEffect(() => {
-    if (scan?.status !== "completed") return
-    fetch(`/api/scans/${params.id}/compare`).then(r => r.json()).then(data => {
-      if (data?.vulnerabilities) {
-        const m = new Map<string, BaselineStatus>()
-        for (const v of data.vulnerabilities) {
-          m.set(v.id, v.baselineStatus)
-        }
-        setBaselineMap(m)
-      }
-    }).catch(() => {})
-  }, [scan?.status, params.id])
-
   const isInProgress = !scan || scan.status === "pending" || scan.status === "scanning"
 
   if (isInProgress) {
@@ -1416,5 +1359,5 @@ export default function ScanDetailPage() {
     )
   }
 
-  return <SecurityReport scan={scan} baselineMap={baselineMap} />
+  return <SecurityReport scan={scan} />
 }

@@ -52,17 +52,8 @@ function runRemoteSemgrep(targetPath: string): string | null {
   }
 }
 
-export async function runSemgrepScan(targetPath: string, changedFiles?: string[]): Promise<ScanResult> {
+export async function runSemgrepScan(targetPath: string): Promise<ScanResult> {
   const scannerName = "semgrep"
-
-  const target = targetPath.replace(/\\/g, "/")
-  // ponytail: for incremental, pass changed files as positional args instead of the whole dir
-  // ponytail: file paths validated against SAFE_FILE to prevent shell metacharacter injection
-  const SAFE_FILE = /^[\w./\\\- ()]+$/
-  const safeFiles = changedFiles?.filter(f => SAFE_FILE.test(f))
-  const targetArg = safeFiles && safeFiles.length > 0
-    ? safeFiles.map(f => `"${target}/${f.replace(/\\/g, '/')}"`).join(" ")
-    : `"${target}"`
 
   // ── 优先使用本地规则 ───────────────────────────────────────
   let stdout: string | null = null
@@ -71,7 +62,8 @@ export async function runSemgrepScan(targetPath: string, changedFiles?: string[]
   if (existsSync(LOCAL_RULES)) {
     try {
       const rulesPath = LOCAL_RULES.replace(/\\/g, "/")
-      const cmd = `"semgrep" --config="${rulesPath}" --json --timeout=30 ${targetArg}`
+      const target = targetPath.replace(/\\/g, "/")
+      const cmd = `"semgrep" --config="${rulesPath}" --json --timeout=30 "${target}"`
       stdout = execSync(cmd, { timeout: 120000, maxBuffer: 10 * 1024 * 1024, encoding: "utf-8", env: { ...process.env, PYTHONIOENCODING: "utf-8" } })
       usedLocalRules = true
     } catch { /* fall through to remote */ }

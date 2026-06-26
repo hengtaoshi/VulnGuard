@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useRef } from "react"
+import { useState, useCallback, useRef, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -18,7 +18,19 @@ export default function NewScanPage() {
   const [target, setTarget] = useState("")
   const [error, setError] = useState("")
   const [engine, setEngine] = useState<ScannerEngine>("ai")
-  const [incremental, setIncremental] = useState(false)
+  const [settingsLoaded, setSettingsLoaded] = useState(false)
+
+  useEffect(() => {
+    fetch("/api/settings")
+      .then(r => r.json())
+      .then(data => {
+        if (data.defaultEngine === "ai" || data.defaultEngine === "all") {
+          setEngine(data.defaultEngine)
+        }
+      })
+      .catch(() => {})
+      .finally(() => setSettingsLoaded(true))
+  }, [])
   const [dragging, setDragging] = useState(false)
   const [uploadProgress, setUploadProgress] = useState("")
   const [uploadedInfo, setUploadedInfo] = useState<{ path: string; displayPath?: string; fileCount: number } | null>(null)
@@ -37,7 +49,6 @@ export default function NewScanPage() {
           target: scanTarget,
           mode: "source",
           engine,
-          incremental,
           projectName: projectName,
           totalFiles: fileFilterInfo?.total,
           skippedFiles: fileFilterInfo?.skipped,
@@ -53,7 +64,7 @@ export default function NewScanPage() {
       setState("error")
       setError(err instanceof Error ? err.message : "扫描启动失败")
     }
-  }, [engine, incremental, router])
+  }, [engine, router])
 
   const uploadFolder = useCallback(async (files: File[], projectName?: string) => {
     setState("uploading")
@@ -153,6 +164,7 @@ export default function NewScanPage() {
              !/\/vendor\//.test(path) &&
              !/\/build\//.test(path) &&
              !/\/\.trivy-cache\//.test(path) &&
+             !/\/\.nvd-cache\//.test(path) &&
              !/\/data\/uploads\//.test(path) &&
              !/\/\.scans\//.test(path) &&
              !/\/\.dc-report\//.test(path) &&
@@ -249,28 +261,6 @@ export default function NewScanPage() {
                 <p className="text-xs text-muted-foreground">{opt.desc}</p>
               </button>
             ))}
-          </div>
-
-          {/* Incremental Scan Toggle */}
-          <div className="mt-4 flex items-center gap-3 p-3 rounded-lg border border-border/50">
-            <div>
-              <label className="text-sm font-medium cursor-pointer" onClick={() => setIncremental(!incremental)}>
-                ⚡ 增量扫描
-              </label>
-              <p className="text-xs text-muted-foreground mt-0.5">仅扫描 git 变更的文件（需 git 仓库），大幅减少扫描时间</p>
-            </div>
-            <button
-              role="switch"
-              aria-checked={incremental}
-              onClick={() => setIncremental(!incremental)}
-              className={`ml-auto relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
-                incremental ? "bg-violet-500" : "bg-muted-foreground/30"
-              }`}
-            >
-              <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transform ring-0 transition-transform ${
-                incremental ? "translate-x-4" : "translate-x-0"
-              }`} />
-            </button>
           </div>
         </CardContent>
       </Card>

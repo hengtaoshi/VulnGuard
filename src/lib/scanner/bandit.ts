@@ -66,26 +66,15 @@ function parseBanditJson(stdout: string): ScanResult | null {
   }
 }
 
-export async function runBanditScan(targetPath: string, changedFiles?: string[]): Promise<ScanResult> {
+export async function runBanditScan(targetPath: string): Promise<ScanResult> {
   const scannerName = "bandit"
   if (!isAvailable()) {
     return { vulnerabilities: [], totalChecks: 0, errors: ["Bandit not installed. Run: pip install bandit"], scannerName }
   }
 
-  const target = targetPath.replace(/\\/g, "/")
-  // ponytail: file paths validated against SAFE_FILE to prevent shell metacharacter injection
-  const SAFE_FILE = /^[\w./\\\- ()]+$/
-  const isIncremental = changedFiles && changedFiles.length > 0
-  const banditTarget = isIncremental
-    ? changedFiles.filter(f => f.endsWith(".py") && SAFE_FILE.test(f)).map(f => `"${target}/${f.replace(/\\/g, '/')}"`).join(" ")
-    : `-r "${target}"`
-  if (isIncremental && !banditTarget) {
-    return { vulnerabilities: [], totalChecks: 0, errors: [], scannerName }
-  }
-
   try {
     const { stdout } = await execAsync(
-      `bandit ${banditTarget} -f json --quiet`,
+      `bandit -r "${targetPath.replace(/\\/g, "/")}" -f json --quiet`,
       { timeout: 120000, maxBuffer: 10 * 1024 * 1024 },
     )
 
