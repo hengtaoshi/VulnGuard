@@ -1,0 +1,68 @@
+# VulnGuard Desktop Build Configuration
+# https://www.electron.build/configuration/configuration
+
+appId: com.vulnguard.desktop
+productName: VulnGuard
+copyright: Copyright © 2025 VulnGuard
+electronDist: electron-bin
+
+directories:
+  output: release
+  buildResources: resources
+
+files:
+  - package.json
+  - ".next/standalone/**/*"
+  - ".next/static/**/*"
+  - "public/**/*"
+  - "cli/**/*"
+  - "electron/**/*"
+
+extraResources:
+  - from: ".next/standalone"
+    to: "app.asar.unpacked/.next/standalone"
+    filter:
+      - "**/*"
+
+asar: true
+asarUnpack:
+  - ".next/standalone/node_modules/**/*"
+  - "node_modules/**/*"
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: resources/icon.png
+  artifactName: "${productName}-${version}-Setup.${ext}"
+
+publish:
+  provider: github
+  owner: hengtaoshi
+  repo: VulnGuard
+  releaseType: release
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: VulnGuard
+  uninstallDisplayName: VulnGuard ${version}
+
+linux:
+  target:
+    - AppImage
+    - deb
+  icon: resources/icon.png
+  category: Security
+
+mac:
+  target:
+    - dmg
+    - zip
+  icon: resources/icon.png
+  category: public.app-category.utilities
+  hardenedRuntime: true
+  gatekeeperAssess: false

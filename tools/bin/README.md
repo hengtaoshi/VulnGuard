@@ -1,655 +1,686 @@
-# Gitleaks
+# OpenSSF Scorecard
+
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/ossf/scorecard/badge)](https://scorecard.dev/viewer/?uri=github.com/ossf/scorecard)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/5621/badge)](https://www.bestpractices.dev/projects/5621)
+[![build](https://github.com/ossf/scorecard/actions/workflows/main.yml/badge.svg)](https://github.com/ossf/scorecard/actions/workflows/main.yml)
+[![CodeQL](https://github.com/ossf/scorecard/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/ossf/scorecard/actions/workflows/codeql-analysis.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/ossf/scorecard/v4.svg)](https://pkg.go.dev/github.com/ossf/scorecard/v4)
+[![Go Report Card](https://goreportcard.com/badge/github.com/ossf/scorecard/v4)](https://goreportcard.com/report/github.com/ossf/scorecard/v4)
+[![codecov](https://codecov.io/gh/ossf/scorecard/branch/main/graph/badge.svg?token=PMJ6NAN9J3)](https://codecov.io/gh/ossf/scorecard)
+[![SLSA 3](https://slsa.dev/images/gh-badge-level3.svg)](https://slsa.dev)
+[![Slack](https://img.shields.io/badge/slack-openssf/scorecard-white.svg?logo=slack)](https://slack.openssf.org/#scorecard)
+
+<img align="right" src="artwork/openssf_security_compressed.png" width="200" height="400">
+
+## Overview
+
+-   [What Is Scorecard?](#what-is-scorecard)
+-   [Prominent Scorecard Users](#prominent-scorecard-users)
+-   [View a Project's Score](#view-a-projects-score)
+-   [Scorecard's Public Data](#public-data)
+
+## Using Scorecard
+
+-   [Scorecard GitHub Action](#scorecard-github-action)
+-   [Scorecard REST API](#scorecard-rest-api)
+-   [Scorecard Badges](#scorecard-badges)
+-   [Scorecard Command Line Interface](#scorecard-command-line-interface)
+    -   [Prerequisites](#prerequisites)
+    -   [Installation](#installation)
+    -   [Authentication](#authentication)
+    -   [Basic Usage](#basic-usage)
+
+## Checks
+
+-   [Default Scorecard Checks](#scorecard-checks)
+-   [Detailed Check Documentation](docs/checks.md) (Scoring Criteria, Risks, and
+    Remediation)
+-   [Beginner's Guide to Scorecard Checks](#beginners-guide-to-scorecard-checks)
+
+## Other Important Recommendations
+-   [Two-factor Authentication (2FA)](#two-factor-authentication-2fa)
+
+## Scoring
+-   [Aggregate Score](#aggregate-score)
+
+## Contribute
+
+-   [Report Problems](#report-problems)
+-   [Code of Conduct](CODE_OF_CONDUCT.md)
+-   [Contribute to Scorecard ](CONTRIBUTING.md)
+-   [Add a New Check](checks/write.md)
+-   [Connect with the Scorecard Community](#connect-with-the-scorecard-community)
+-   [Report a Security Issue](SECURITY.md)
+
+## FAQ
+
+- [FAQ](docs/faq.md)
+
+## Overview
+
+### What is Scorecard?
+We created Scorecard to help open source maintainers improve their security
+best practices and to help open source consumers judge whether their dependencies
+are safe.
+
+Scorecard is an automated tool that assesses a number of important heuristics
+[("checks")](#scorecard-checks) associated with software security and assigns
+each check a score of 0-10. You can use these scores to understand specific
+areas to improve in order to strengthen the security posture of your project.
+You can also assess the risks that dependencies introduce, and make informed
+decisions about accepting these risks, evaluating alternative solutions, or
+working with the maintainers to make improvements.
+
+The inspiration for Scorecard’s logo:
+["You passed! All D's ... and an A!"](https://youtu.be/rDMMYT3vkTk)
+
+#### Project Goals
+
+1.  Automate analysis and trust decisions on the security posture of open source
+    projects.
+
+1.  Use this data to proactively improve the security posture of the critical
+    projects the world depends on.
+
+1. Act as a measurement tool for existing policies
+
+    If OSS consumers require certain behaviors from their dependencies,
+    Scorecard can be used to measure those. With the V5 release, we see
+    Structured Results as a way of doing this if there is a supported analysis.
+    Instead of relying on an aggregate score of X/10, or a Maintained score of
+    Y/10, an OSS consumer may want to ensure the repo they're depending on
+    isn't archived (which is covered by the `archived` probe). The OpenSSF
+    takes this approach with its own Security Baseline for projects.
+
+#### Project Non-Goals
+
+1.  To be a definitive report or requirement that all projects should follow.
+
+    Scorecard is not intended to be a one-size-fits-all solution. Every step of
+    making our results is opinionated: what checks get included or excluded,
+    the importance of each check, and how scores are calculated. The checks
+    themselves are heuristics; there are false positives and false negatives.
+
+    Whether it’s due to applicability, or feasibility, or a matter of opinion,
+    what's included or excluded from Scorecard results leads to a lot of
+    discussion. It’s impossible to create a Scorecard that satisfies everyone
+    because different audiences will care about different subsets of behavior.
+
+    Aggregate scores in particular tells you nothing about what individual
+    behaviors a repository is or is not doing. Many check scores are aggregated
+    into a single score, and there’s multiple ways of arriving at the same
+    score. These scores change as we add new heuristics or refine the existing
+    ones.
+
+### Prominent Scorecard Users
+
+Scorecard has been run on thousands of projects to monitor and track security
+metrics. Prominent projects that use Scorecard include:
+
+-   [Tensorflow](https://github.com/tensorflow/tensorflow)
+-   [Angular](https://github.com/angular/angular)
+-   [Flutter](https://github.com/flutter/flutter)
+-   [sos.dev](https://sos.dev)
+-   [deps.dev](https://deps.dev)
+
+### View a Project's Score
+
+To see scores for projects regularly scanned by Scorecard, navigate to the [webviewer](https://scorecard.dev/viewer/?uri=). You can also replace the placeholder text (platform, user/org, and repository name) in the following template link to generate a custom Scorecard link for a repo:
+`https://scorecard.dev/viewer/?uri=<github_or_gitlab>.com/<user_name_or_org>/<repository_name>`
+
+For example:
+ - [https://scorecard.dev/viewer/?uri=github.com/ossf/scorecard](https://scorecard.dev/viewer/?uri=github.com/ossf/scorecard)
+ - [https://scorecard.dev/viewer/?uri=gitlab.com/fdroid/fdroidclient](https://scorecard.dev/viewer/?uri=gitlab.com/fdroid/fdroidclient)
+
+To view scores for projects not included in the webviewer, use the [Scorecard CLI](#scorecard-command-line-interface).
+
+### Public Data
+
+We run a weekly Scorecard scan of the 1 million most critical open source
+projects judged by their direct dependencies and publish the results in a
+[BigQuery public dataset](https://cloud.google.com/bigquery/public-data).
+
+This data is available in the public BigQuery dataset
+`openssf:scorecardcron.scorecard-v2`. The latest results are available in the
+BigQuery view `openssf:scorecardcron.scorecard-v2_latest`.
+
+You can query the data using [BigQuery Explorer](http://console.cloud.google.com/bigquery) by navigating to Add Data > Star a project by name > 'openssf'.
+For example, you may be interested in how a project's score has changed over time:
+
+```sql
+SELECT date, score FROM `openssf.scorecardcron.scorecard-v2` WHERE repo.name="github.com/ossf/scorecard" ORDER BY date ASC
+```
+
+You can extract the latest results to Google Cloud storage in JSON format using
+the [`bq`](https://cloud.google.com/bigquery/docs/bq-command-line-tool) tool:
 
 ```
-┌─○───┐
-│ │╲  │
-│ │ ○ │
-│ ○ ░ │
-└─░───┘
-```
+# Get the latest PARTITION_ID
+bq query --nouse_legacy_sql 'SELECT partition_id FROM
+openssf.scorecardcron.INFORMATION_SCHEMA.PARTITIONS WHERE table_name="scorecard-v2"
+AND partition_id!="__NULL__" ORDER BY partition_id DESC
+LIMIT 1'
 
-[license]: ./LICENSE
-[badge-license]: https://img.shields.io/github/license/gitleaks/gitleaks.svg
-[go-docs-badge]: https://pkg.go.dev/badge/github.com/gitleaks/gitleaks/v8?status
-[go-docs]: https://pkg.go.dev/github.com/zricethezav/gitleaks/v8
-[badge-build]: https://github.com/gitleaks/gitleaks/actions/workflows/test.yml/badge.svg
-[build]: https://github.com/gitleaks/gitleaks/actions/workflows/test.yml
-[go-report-card-badge]: https://goreportcard.com/badge/github.com/gitleaks/gitleaks/v8
-[go-report-card]: https://goreportcard.com/report/github.com/gitleaks/gitleaks/v8
-[dockerhub]: https://hub.docker.com/r/zricethezav/gitleaks
-[dockerhub-badge]: https://img.shields.io/docker/pulls/zricethezav/gitleaks.svg
-[gitleaks-action]: https://github.com/gitleaks/gitleaks-action
-[gitleaks-badge]: https://img.shields.io/badge/protected%20by-gitleaks-blue
-[gitleaks-playground-badge]: https://img.shields.io/badge/gitleaks%20-playground-blue
-[gitleaks-playground]: https://gitleaks.io/playground
-
-
-[![GitHub Action Test][badge-build]][build]
-[![Docker Hub][dockerhub-badge]][dockerhub]
-[![Gitleaks Playground][gitleaks-playground-badge]][gitleaks-playground]
-[![Gitleaks Action][gitleaks-badge]][gitleaks-action]
-[![GoDoc][go-docs-badge]][go-docs]
-[![GoReportCard][go-report-card-badge]][go-report-card]
-[![License][badge-license]][license]
-
-Gitleaks is a tool for **detecting** secrets like passwords, API keys, and tokens in git repos, files, and whatever else you wanna throw at it via `stdin`. If you wanna learn more about how the detection engine works check out this blog: [Regex is (almost) all you need](https://lookingatcomputer.substack.com/p/regex-is-almost-all-you-need).
+# Extract to GCS
+bq extract --destination_format=NEWLINE_DELIMITED_JSON
+'openssf:scorecardcron.scorecard-v2$<partition_id>' gs://bucket-name/filename-*.json
 
 ```
-➜  ~/code(master) gitleaks git -v
 
-    ○
-    │╲
-    │ ○
-    ○ ░
-    ░    gitleaks
+The list of projects that are checked is available in the
+[`cron/internal/data/projects.csv`](https://github.com/ossf/scorecard/blob/main/cron/internal/data/projects.csv)
+file in this repository. If you would like us to track more, please feel free to
+send a Pull Request with others. Currently, this list is derived from **projects
+hosted on GitHub ONLY**. We do plan to expand them in near future to account for
+projects hosted on other source control systems.
 
+## Using Scorecard
 
-Finding:     "export BUNDLE_ENTERPRISE__CONTRIBSYS__COM=cafebabe:deadbeef",
-Secret:      cafebabe:deadbeef
-RuleID:      sidekiq-secret
-Entropy:     2.609850
-File:        cmd/generate/config/rules/sidekiq.go
-Line:        23
-Commit:      cd5226711335c68be1e720b318b7bc3135a30eb2
-Author:      John
-Email:       john@users.noreply.github.com
-Date:        2022-08-03T12:31:40Z
-Fingerprint: cd5226711335c68be1e720b318b7bc3135a30eb2:cmd/generate/config/rules/sidekiq.go:sidekiq-secret:23
+### Scorecard GitHub Action
+
+The easiest way to use Scorecard on GitHub projects you own is with the
+[Scorecard GitHub Action](https://github.com/ossf/scorecard-action). The Action
+runs on any repository change and issues alerts that maintainers can view in the
+repository’s Security tab. For more information, see the Scorecard GitHub
+Action
+[installation instructions](https://github.com/ossf/scorecard-action#installation).
+
+### Scorecard REST API
+
+To query pre-calculated scores of OSS projects, use the [REST API](https://api.scorecard.dev).
+Scores calculated from our [weekly scan](#public-data) omit the `CI-Tests`,
+`Contributors`, and `Dependency-Update-Tool` checks due to the API costs 
+associated with running them at scale.
+
+API results are cached with a CDN (thanks to [Fastly](https://www.fastly.com/) and their [Fast Forward](https://www.fastly.com/fast-forward) program). Results are purged from the CDN when new results are available, but if you notice issues with stale data, please open an issue.
+
+To enable your project to be available on the REST API, set
+[`publish_results: true`](https://github.com/ossf/scorecard-action/blob/dd5015aaf9688596b0e6d11e7f24fff566aa366b/action.yaml#L35)
+in the Scorecard GitHub Action setting.
+
+Data provided by the REST API is licensed under the [CDLA Permissive 2.0](https://cdla.dev/permissive-2-0).
+
+### Scorecard Badges
+
+Enabling [`publish_results: true`](https://github.com/ossf/scorecard-action/blob/dd5015aaf9688596b0e6d11e7f24fff566aa366b/action.yaml#L35)
+in Scorecard GitHub Actions also allows maintainers to display a Scorecard badge on their repository to show off their
+hard work. This badge also auto-updates for every change made to the repository. See more details on [this OSSF blogpost](https://openssf.org/blog/2022/09/08/show-off-your-security-score-announcing-scorecards-badges/).
+
+To include a badge on your project's repository, simply add the following markdown to your README:
+
+```
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/{owner}/{repo}/badge)](https://scorecard.dev/viewer/?uri=github.com/{owner}/{repo})
 ```
 
-### GitHub Sponsors
+### Scorecard Command Line Interface
 
-Sponsor [@zricethezav on GitHub](https://github.com/sponsors/zricethezav/) to get
-featured on this README.
+To run a Scorecard scan on projects you do not own, use the command line
+interface installation option.
 
-## Getting Started
+#### Prerequisites
 
-Gitleaks can be installed using Homebrew, Docker, or Go. Gitleaks is also available in binary form for many popular platforms and OS types on the [releases page](https://github.com/gitleaks/gitleaks/releases). In addition, Gitleaks can be implemented as a pre-commit hook directly in your repo or as a GitHub action using [Gitleaks-Action](https://github.com/gitleaks/gitleaks-action).
+Platforms: Currently, Scorecard supports OSX and Linux platforms. If you are
+using a Windows OS you may experience issues. Contributions towards supporting
+Windows are welcome.
 
-### Installing
+Language: You must have GoLang installed to run Scorecard
+(https://golang.org/doc/install)
+
+#### Installation
+
+##### Docker
+
+`scorecard` is available as a Docker container:
+
+```shell
+docker pull ghcr.io/ossf/scorecard:latest
+```
+
+To use a specific scorecard version (e.g., v3.2.1), run:
+
+```shell
+docker pull ghcr.io/ossf/scorecard:v3.2.1
+```
+
+##### Standalone
+
+To install Scorecard as a standalone:
+
+Visit our latest [release page](https://github.com/ossf/scorecard/releases/latest) and
+download the correct zip file for your operating system.
+
+Add the binary to your `GOPATH/bin` directory (use `go env GOPATH` to identify your directory if necessary).
+
+###### Verifying SLSA provenance for downloaded releases
+
+We generate [SLSA3 signatures](https://slsa.dev) using the OpenSSF's [slsa-framework/slsa-github-generator](https://github.com/slsa-framework/slsa-github-generator) during the release process. To verify a release binary:
+1. Install the verification tool from [slsa-framework/slsa-verifier#installation](https://github.com/slsa-framework/slsa-verifier#installation).
+2. Download the signature file `attestation.intoto.jsonl` from the [GitHub releases page](https://github.com/GoogleContainerTools/jib/releases/latest).
+3. Run the verifier:
+
+```shell
+slsa-verifier -artifact-path <the-zip> -provenance attestation.intoto.jsonl -source github.com/ossf/scorecard -tag <the-tag>
+```
+
+##### Using package managers
+
+Package Manager                                            | Supported Distribution | Command
+---------------------------------------------------------- | ---------------------- | -------
+Nix                                                        | NixOS                  | `nix-shell -p nixpkgs.scorecard`
+[AUR helper](https://wiki.archlinux.org/title/AUR_helpers) | Arch Linux             | Use your AUR helper to install `scorecard`
+[Homebrew](https://brew.sh/)                               | macOS or Linux         | `brew install scorecard`
+
+#### Authentication
+
+GitHub imposes [api rate limits](https://developer.github.com/v3/#rate-limiting)
+on unauthenticated requests. To avoid these limits, you must authenticate your
+requests before running Scorecard. There are two ways to authenticate your
+requests: either create a GitHub personal access token, or create a GitHub App
+Installation.
+
+-   [Create a classic GitHub personal access token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token#creating-a-personal-access-token-classic).
+    When creating the personal access token, we suggest you choose the
+    `public_repo` scope. Set the token in an environment variable called
+    `GITHUB_AUTH_TOKEN`, `GITHUB_TOKEN`, `GH_AUTH_TOKEN` or `GH_TOKEN` using the
+    commands below according to your platform.
+
+```shell
+# For posix platforms, e.g. linux, mac:
+export GITHUB_AUTH_TOKEN=<your access token>
+# Multiple tokens can be provided separated by comma to be utilized
+# in a round robin fashion.
+export GITHUB_AUTH_TOKEN=<your access token1>,<your access token2>
+
+# For windows:
+set GITHUB_AUTH_TOKEN=<your access token>
+set GITHUB_AUTH_TOKEN=<your access token1>,<your access token2>
+```
+
+OR
+
+-   [Create a GitHub App Installation](https://docs.github.com/en/developers/apps/building-github-apps/creating-a-github-app)
+    for higher rate-limit quotas. If you have an installed GitHub App and key
+    file, you can use the three environment variables below, following the
+    commands (`set` or `export`) shown above for your platform.
+
+```
+GITHUB_APP_KEY_PATH=<path to the key file on disk>
+GITHUB_APP_INSTALLATION_ID=<installation id>
+GITHUB_APP_ID=<app id>
+```
+
+These variables can be obtained from the GitHub
+[developer settings](https://github.com/settings/apps) page.
+
+#### Basic Usage
+
+##### Using repository URL
+
+Scorecard can run using just one argument, the URL of the target repo:
+
+```shell
+scorecard --repo=github.com/ossf-tests/scorecard-check-branch-protection-e2e
+```
+```shell
+Starting [CII-Best-Practices]
+Starting [Fuzzing]
+Starting [Pinned-Dependencies]
+Starting [CI-Tests]
+Starting [Maintained]
+Starting [Packaging]
+Starting [SAST]
+Starting [Dependency-Update-Tool]
+Starting [Token-Permissions]
+Starting [Security-Policy]
+Starting [Signed-Releases]
+Starting [Binary-Artifacts]
+Starting [Branch-Protection]
+Starting [Code-Review]
+Starting [Contributors]
+Starting [Vulnerabilities]
+Finished [CI-Tests]
+Finished [Maintained]
+Finished [Packaging]
+Finished [SAST]
+Finished [Signed-Releases]
+Finished [Binary-Artifacts]
+Finished [Branch-Protection]
+Finished [Code-Review]
+Finished [Contributors]
+Finished [Dependency-Update-Tool]
+Finished [Token-Permissions]
+Finished [Security-Policy]
+Finished [Vulnerabilities]
+Finished [CII-Best-Practices]
+Finished [Fuzzing]
+Finished [Pinned-Dependencies]
+
+RESULTS
+-------
+Aggregate score: 7.9 / 10
+
+Check scores:
+|---------|------------------------|--------------------------------|---------------------------------------------------------------------------|
+|  SCORE  |          NAME          |             REASON             |                         DOCUMENTATION/REMEDIATION                         |
+|---------|------------------------|--------------------------------|---------------------------------------------------------------------------|
+| 10 / 10 | Binary-Artifacts       | no binaries found in the repo  | github.com/ossf/scorecard/blob/main/docs/checks.md#binary-artifacts       |
+|---------|------------------------|--------------------------------|---------------------------------------------------------------------------|
+| 9 / 10  | Branch-Protection      | branch protection is not       | github.com/ossf/scorecard/blob/main/docs/checks.md#branch-protection      |
+|         |                        | maximal on development and all |                                                                           |
+|         |                        | release branches               |                                                                           |
+|---------|------------------------|--------------------------------|---------------------------------------------------------------------------|
+| ?       | CI-Tests               | no pull request found          | github.com/ossf/scorecard/blob/main/docs/checks.md#ci-tests               |
+|---------|------------------------|--------------------------------|---------------------------------------------------------------------------|
+| 0 / 10  | CII-Best-Practices     | no badge found                 | github.com/ossf/scorecard/blob/main/docs/checks.md#cii-best-practices     |
+|---------|------------------------|--------------------------------|---------------------------------------------------------------------------|
+| 10 / 10 | Code-Review            | branch protection for default  | github.com/ossf/scorecard/blob/main/docs/checks.md#code-review            |
+|         |                        | branch is enabled              |                                                                           |
+|---------|------------------------|--------------------------------|---------------------------------------------------------------------------|
+| 0 / 10  | Contributors           | 0 different companies found -- | github.com/ossf/scorecard/blob/main/docs/checks.md#contributors           |
+|         |                        | score normalized to 0          |                                                                           |
+|---------|------------------------|--------------------------------|---------------------------------------------------------------------------|
+| 0 / 10  | Dependency-Update-Tool | no update tool detected        | github.com/ossf/scorecard/blob/main/docs/checks.md#dependency-update-tool |
+|---------|------------------------|--------------------------------|---------------------------------------------------------------------------|
+| 0 / 10  | Fuzzing                | project is not fuzzed in       | github.com/ossf/scorecard/blob/main/docs/checks.md#fuzzing                |
+|         |                        | OSS-Fuzz                       |                                                                           |
+|---------|------------------------|--------------------------------|---------------------------------------------------------------------------|
+| 1 / 10  | Maintained             | 2 commit(s) found in the last  | github.com/ossf/scorecard/blob/main/docs/checks.md#maintained             |
+|         |                        | 90 days -- score normalized to |                                                                           |
+|         |                        | 1                              |                                                                           |
+|---------|------------------------|--------------------------------|---------------------------------------------------------------------------|
+| ?       | Packaging              | no published package detected  | github.com/ossf/scorecard/blob/main/docs/checks.md#packaging              |
+|---------|------------------------|--------------------------------|---------------------------------------------------------------------------|
+| 8 / 10  | Pinned-Dependencies    | unpinned dependencies detected | github.com/ossf/scorecard/blob/main/docs/checks.md#pinned-dependencies    |
+|         |                        | -- score normalized to 8       |                                                                           |
+|---------|------------------------|--------------------------------|---------------------------------------------------------------------------|
+| 0 / 10  | SAST                   | no SAST tool detected          | github.com/ossf/scorecard/blob/main/docs/checks.md#sast                   |
+|---------|------------------------|--------------------------------|---------------------------------------------------------------------------|
+| 0 / 10  | Security-Policy        | security policy file not       | github.com/ossf/scorecard/blob/main/docs/checks.md#security-policy        |
+|         |                        | detected                       |                                                                           |
+|---------|------------------------|--------------------------------|---------------------------------------------------------------------------|
+| ?       | Signed-Releases        | no releases found              | github.com/ossf/scorecard/blob/main/docs/checks.md#signed-releases        |
+|---------|------------------------|--------------------------------|---------------------------------------------------------------------------|
+| 10 / 10 | Token-Permissions      | tokens are read-only in GitHub | github.com/ossf/scorecard/blob/main/docs/checks.md#token-permissions      |
+|         |                        | workflows                      |                                                                           |
+|---------|------------------------|--------------------------------|---------------------------------------------------------------------------|
+| 10 / 10 | Vulnerabilities        | no vulnerabilities detected    | github.com/ossf/scorecard/blob/main/docs/checks.md#vulnerabilities        |
+|---------|------------------------|--------------------------------|---------------------------------------------------------------------------|
+```
+
+###### Docker
+
+The `GITHUB_AUTH_TOKEN` has to be set to a valid [token](#Authentication)
+
+```shell
+docker run -e GITHUB_AUTH_TOKEN=token ghcr.io/ossf/scorecard:latest --show-details --repo=https://github.com/ossf/scorecard
+```
+
+To use a specific scorecard version (e.g., v3.2.1), run:
+
+```shell
+docker run -e GITHUB_AUTH_TOKEN=token ghcr.io/ossf/scorecard:v3.2.1 --show-details --repo=https://github.com/ossf/scorecard
+```
+
+##### Showing Detailed Results
+
+For more details about why a check fails, use the `--show-details` option:
+
+```
+./scorecard --repo=github.com/ossf-tests/scorecard-check-branch-protection-e2e --checks Branch-Protection --show-details
+```
+```shell
+Starting [Pinned-Dependencies]
+Finished [Pinned-Dependencies]
+
+RESULTS
+-------
+|---------|------------------------|--------------------------------|--------------------------------|---------------------------------------------------------------------------|
+|  SCORE  |          NAME          |             REASON             |            DETAILS             |                         DOCUMENTATION/REMEDIATION                         |
+|---------|------------------------|--------------------------------|--------------------------------|---------------------------------------------------------------------------|
+| 9 / 10  | Branch-Protection      | branch protection is not       | Info: 'force pushes' disabled  | github.com/ossf/scorecard/blob/main/docs/checks.md#branch-protection      |
+|         |                        | maximal on development and all | on branch 'main' Info: 'allow  |                                                                           |
+|         |                        | release branches               | deletion' disabled on branch   |                                                                           |
+|         |                        |                                | 'main' Info: linear history    |                                                                           |
+|         |                        |                                | enabled on branch 'main' Info: |                                                                           |
+|         |                        |                                | strict status check enabled    |                                                                           |
+|         |                        |                                | on branch 'main' Warn: status  |                                                                           |
+|         |                        |                                | checks for merging have no     |                                                                           |
+|         |                        |                                | specific status to check on    |                                                                           |
+|         |                        |                                | branch 'main' Info: number     |                                                                           |
+|         |                        |                                | of required reviewers is 2     |                                                                           |
+|         |                        |                                | on branch 'main' Info: Stale   |                                                                           |
+|         |                        |                                | review dismissal enabled on    |                                                                           |
+|         |                        |                                | branch 'main' Info: Owner      |                                                                           |
+|         |                        |                                | review required on branch      |                                                                           |
+|         |                        |                                | 'main' Info: 'administrator'   |                                                                           |
+|         |                        |                                | PRs need reviews before being  |                                                                           |
+|         |                        |                                | merged on branch 'main'        |                                                                           |
+|---------|------------------------|--------------------------------|--------------------------------|---------------------------------------------------------------------------|
+```
+
+##### Showing Maintainers Annotations
+
+**Maintainer Annotations** let maintainers add context to display alongside Scorecard check results. Annotations can provide users additional information when Scorecard has an incomplete assessment of a project's security practices. To see the maintainers annotations for each check, use the `--show-annotations` option.
+
+For more information on available annotations or how to make annotations, see [the configuration doc](config/README.md).
+
+##### Using a GitLab Repository
+
+To run Scorecard on a GitLab repository, you must create a [GitLab Access Token](https://gitlab.com/-/profile/personal_access_tokens) with the following permissions:
+
+- `read_api`
+- `read_user`
+- `read_repository`
+
+You can run Scorecard on a GitLab repository by setting the `GITLAB_AUTH_TOKEN` environment variable:
 
 ```bash
-# MacOS
-brew install gitleaks
+export GITLAB_AUTH_TOKEN=glpat-xxxx
 
-# Docker (DockerHub)
-docker pull zricethezav/gitleaks:latest
-docker run -v ${path_to_host_folder_to_scan}:/path zricethezav/gitleaks:latest [COMMAND] [OPTIONS] [SOURCE_PATH]
-
-# Docker (ghcr.io)
-docker pull ghcr.io/gitleaks/gitleaks:latest
-docker run -v ${path_to_host_folder_to_scan}:/path ghcr.io/gitleaks/gitleaks:latest [COMMAND] [OPTIONS] [SOURCE_PATH]
-
-# From Source (make sure `go` is installed)
-git clone https://github.com/gitleaks/gitleaks.git
-cd gitleaks
-make build
+scorecard --repo gitlab.com/<org>/<project>/<subproject>
 ```
 
-### GitHub Action
+For an example of using Scorecard in GitLab CI/CD, see [here](https://gitlab.com/ossf-test/scorecard-pipeline-example).
 
-Check out the official [Gitleaks GitHub Action](https://github.com/gitleaks/gitleaks-action)
+###### Self Hosted Editions
+While we focus on GitLab.com support, Scorecard also works with self-hosted GitLab installations.
+If your platform is hosted at a subdomain (e.g. `gitlab.foo.com`), Scorecard should work out of the box.
+If your platform is hosted at some slug (e.g. `foo.com/bar/`), you will need to set the `GL_HOST` environment variable.
 
-```
-name: gitleaks
-on: [pull_request, push, workflow_dispatch]
-jobs:
-  scan:
-    name: gitleaks
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE}} # Only required for Organizations, not personal accounts.
+```bash
+export GITLAB_AUTH_TOKEN=glpat-xxxx
+export GL_HOST=foo.com/bar
+scorecard --repo foo.com/bar/<org>/<project>
 ```
 
-### Pre-Commit
+##### Using GitHub Enterprise Server (GHES) based Repository
 
-1. Install pre-commit from https://pre-commit.com/#install
-2. Create a `.pre-commit-config.yaml` file at the root of your repository with the following content:
+To use a GitHub Enterprise host `github.corp.com`, use the `GH_HOST` environment variable.
 
-   ```
-   repos:
-     - repo: https://github.com/gitleaks/gitleaks
-       rev: v8.24.2
-       hooks:
-         - id: gitleaks
-   ```
+```shell
+# Set the GitHub Enterprise host without https prefix or slash with relevant authentication token
+export GH_HOST=github.corp.com
+export GITHUB_AUTH_TOKEN=token
 
-   for a [native execution of gitleaks](https://github.com/gitleaks/gitleaks/releases) or use the [`gitleaks-docker` pre-commit ID](https://github.com/gitleaks/gitleaks/blob/master/.pre-commit-hooks.yaml) for executing gitleaks using the [official Docker images](#docker)
-
-3. Auto-update the config to the latest repos' versions by executing `pre-commit autoupdate`
-4. Install with `pre-commit install`
-5. Now you're all set!
-
-```
-➜ git commit -m "this commit contains a secret"
-Detect hardcoded secrets.................................................Failed
+scorecard --repo=github.corp.com/org/repo
+# OR without github host url
+scorecard --repo=org/repo
 ```
 
-Note: to disable the gitleaks pre-commit hook you can prepend `SKIP=gitleaks` to the commit command
-and it will skip running gitleaks
-
-```
-➜ SKIP=gitleaks git commit -m "skip gitleaks check"
-Detect hardcoded secrets................................................Skipped
-```
-
-## Usage
-
-```
-Gitleaks scans code, past or present, for secrets
-
-Usage:
-  gitleaks [command]
-
-Available Commands:
-  completion  Generate the autocompletion script for the specified shell
-  dir         scan directories or files for secrets
-  git         scan git repositories for secrets
-  help        Help about any command
-  stdin       detect secrets from stdin
-  version     display gitleaks version
-
-Flags:
-  -b, --baseline-path string          path to baseline with issues that can be ignored
-  -c, --config string                 config file path
-                                      order of precedence:
-                                      1. --config/-c
-                                      2. env var GITLEAKS_CONFIG
-                                      3. env var GITLEAKS_CONFIG_TOML with the file content
-                                      4. (target path)/.gitleaks.toml
-                                      If none of the four options are used, then gitleaks will use the default config
-      --diagnostics string            enable diagnostics (http OR comma-separated list: cpu,mem,trace). cpu=CPU prof, mem=memory prof, trace=exec tracing, http=serve via net/http/pprof
-      --diagnostics-dir string        directory to store diagnostics output files when not using http mode (defaults to current directory)
-      --enable-rule strings           only enable specific rules by id
-      --exit-code int                 exit code when leaks have been encountered (default 1)
-  -i, --gitleaks-ignore-path string   path to .gitleaksignore file or folder containing one (default ".")
-  -h, --help                          help for gitleaks
-      --ignore-gitleaks-allow         ignore gitleaks:allow comments
-  -l, --log-level string              log level (trace, debug, info, warn, error, fatal) (default "info")
-      --max-archive-depth int         allow scanning into nested archives up to this depth (default "0", no archive traversal is done)
-      --max-decode-depth int          allow recursive decoding up to this depth (default "0", no decoding is done)
-      --max-target-megabytes int      files larger than this will be skipped
-      --no-banner                     suppress banner
-      --no-color                      turn off color for verbose output
-      --redact uint[=100]             redact secrets from logs and stdout. To redact only parts of the secret just apply a percent value from 0..100. For example --redact=20 (default 100%)
-  -f, --report-format string          output format (json, csv, junit, sarif, template)
-  -r, --report-path string            report file
-      --report-template string        template file used to generate the report (implies --report-format=template)
-      --timeout int                   set a timeout for gitleaks commands in seconds (default "0", no timeout is set)
-  -v, --verbose                       show verbose output from scan
-      --version                       version for gitleaks
-
-Use "gitleaks [command] --help" for more information about a command.
-```
-
-### Commands
-
-⚠️ v8.19.0 introduced a change that deprecated `detect` and `protect`. Those commands are still available but
-are hidden in the `--help` menu. Take a look at this [gist](https://gist.github.com/zricethezav/b325bb93ebf41b9c0b0507acf12810d2) for easy command translations.
-If you find v8.19.0 broke an existing command (`detect`/`protect`), please open an issue.
-
-There are three scanning modes: `git`, `dir`, and `stdin`.
-
-#### Git
-
-The `git` command lets you scan local git repos. Under the hood, gitleaks uses the `git log -p` command to scan patches.
-You can configure the behavior of `git log -p` with the `log-opts` option.
-For example, if you wanted to run gitleaks on a range of commits you could use the following
-command: `gitleaks git -v --log-opts="--all commitA..commitB" path_to_repo`. See the [git log](https://git-scm.com/docs/git-log) documentation for more information.
-If there is no target specified as a positional argument, then gitleaks will attempt to scan the current working directory as a git repo.
-
-#### Dir
-
-The `dir` (aliases include `files`, `directory`) command lets you scan directories and files. Example: `gitleaks dir -v path_to_directory_or_file`.
-If there is no target specified as a positional argument, then gitleaks will scan the current working directory.
-
-#### Stdin
-
-You can also stream data to gitleaks with the `stdin` command. Example: `cat some_file | gitleaks -v stdin`
-
-### Creating a baseline
-
-When scanning large repositories or repositories with a long history, it can be convenient to use a baseline. When using a baseline,
-gitleaks will ignore any old findings that are present in the baseline. A baseline can be any gitleaks report. To create a gitleaks report, run gitleaks with the `--report-path` parameter.
-
-```
-gitleaks git --report-path gitleaks-report.json # This will save the report in a file called gitleaks-report.json
-```
-
-Once as baseline is created it can be applied when running the detect command again:
-
-```
-gitleaks git --baseline-path gitleaks-report.json --report-path findings.json
-```
-
-After running the detect command with the --baseline-path parameter, report output (findings.json) will only contain new issues.
-
-## Pre-Commit hook
-
-You can run Gitleaks as a pre-commit hook by copying the example `pre-commit.py` script into
-your `.git/hooks/` directory.
-
-## Load Configuration
-
-The order of precedence is:
-
-1. `--config/-c` option:
-      ```bash
-      gitleaks git --config /home/dev/customgitleaks.toml .
-      ```
-2. Environment variable `GITLEAKS_CONFIG` with the file path:
-      ```bash
-      export GITLEAKS_CONFIG="/home/dev/customgitleaks.toml"
-      gitleaks git .
-      ```
-3. Environment variable `GITLEAKS_CONFIG_TOML` with the file content:
-      ```bash
-      export GITLEAKS_CONFIG_TOML=`cat customgitleaks.toml`
-      gitleaks git .
-      ```
-4. A `.gitleaks.toml` file within the target path:
-      ```bash
-      gitleaks git .
-      ```
-
-If none of the four options are used, then gitleaks will use the default config.
-
-## Configuration
-
-Gitleaks offers a configuration format you can follow to write your own secret detection rules:
-
-```toml
-# Title for the gitleaks configuration file.
-title = "Custom Gitleaks configuration"
-
-# You have basically two options for your custom configuration:
-#
-# 1. define your own configuration, default rules do not apply
-#
-#    use e.g., the default configuration as starting point:
-#    https://github.com/gitleaks/gitleaks/blob/master/config/gitleaks.toml
-#
-# 2. extend a configuration, the rules are overwritten or extended
-#
-#    When you extend a configuration the extended rules take precedence over the
-#    default rules. I.e., if there are duplicate rules in both the extended
-#    configuration and the default configuration the extended rules or
-#    attributes of them will override the default rules.
-#    Another thing to know with extending configurations is you can chain
-#    together multiple configuration files to a depth of 2. Allowlist arrays are
-#    appended and can contain duplicates.
-
-# useDefault and path can NOT be used at the same time. Choose one.
-[extend]
-# useDefault will extend the default gitleaks config built in to the binary
-# the latest version is located at:
-# https://github.com/gitleaks/gitleaks/blob/master/config/gitleaks.toml
-useDefault = true
-# or you can provide a path to a configuration to extend from.
-# The path is relative to where gitleaks was invoked,
-# not the location of the base config.
-# path = "common_config.toml"
-# If there are any rules you don't want to inherit, they can be specified here.
-disabledRules = [ "generic-api-key"]
-
-# An array of tables that contain information that define instructions
-# on how to detect secrets
-[[rules]]
-# Unique identifier for this rule
-id = "awesome-rule-1"
-
-# Short human-readable description of the rule.
-description = "awesome rule 1"
-
-# Golang regular expression used to detect secrets. Note Golang's regex engine
-# does not support lookaheads.
-regex = '''one-go-style-regex-for-this-rule'''
-
-# Int used to extract secret from regex match and used as the group that will have
-# its entropy checked if `entropy` is set.
-secretGroup = 3
-
-# Float representing the minimum shannon entropy a regex group must have to be considered a secret.
-entropy = 3.5
-
-# Golang regular expression used to match paths. This can be used as a standalone rule or it can be used
-# in conjunction with a valid `regex` entry.
-path = '''a-file-path-regex'''
-
-# Keywords are used for pre-regex check filtering. Rules that contain
-# keywords will perform a quick string compare check to make sure the
-# keyword(s) are in the content being scanned. Ideally these values should
-# either be part of the identiifer or unique strings specific to the rule's regex
-# (introduced in v8.6.0)
-keywords = [
-  "auth",
-  "password",
-  "token",
-]
-
-# Array of strings used for metadata and reporting purposes.
-tags = ["tag","another tag"]
-
-    # ⚠️ In v8.21.0 `[rules.allowlist]` was replaced with `[[rules.allowlists]]`.
-    # This change was backwards-compatible: instances of `[rules.allowlist]` still  work.
-    #
-    # You can define multiple allowlists for a rule to reduce false positives.
-    # A finding will be ignored if _ANY_ `[[rules.allowlists]]` matches.
-    [[rules.allowlists]]
-    description = "ignore commit A"
-    # When multiple criteria are defined the default condition is "OR".
-    # e.g., this can match on |commits| OR |paths| OR |stopwords|.
-    condition = "OR"
-    commits = [ "commit-A", "commit-B"]
-    paths = [
-      '''go\.mod''',
-      '''go\.sum'''
-    ]
-    # note: stopwords targets the extracted secret, not the entire regex match
-    # like 'regexes' does. (stopwords introduced in 8.8.0)
-    stopwords = [
-      '''client''',
-      '''endpoint''',
-    ]
-
-    [[rules.allowlists]]
-    # The "AND" condition can be used to make sure all criteria match.
-    # e.g., this matches if |regexes| AND |paths| are satisfied.
-    condition = "AND"
-    # note: |regexes| defaults to check the _Secret_ in the finding.
-    # Acceptable values for |regexTarget| are "secret" (default), "match", and "line".
-    regexTarget = "match"
-    regexes = [ '''(?i)parseur[il]''' ]
-    paths = [ '''package-lock\.json''' ]
-
-# You can extend a particular rule from the default config. e.g., gitlab-pat
-# if you have defined a custom token prefix on your GitLab instance
-[[rules]]
-id = "gitlab-pat"
-# all the other attributes from the default rule are inherited
-
-    [[rules.allowlists]]
-    regexTarget = "line"
-    regexes = [ '''MY-glpat-''' ]
-
-
-# ⚠️ In v8.25.0 `[allowlist]` was replaced with `[[allowlists]]`.
-#
-# Global allowlists have a higher order of precedence than rule-specific allowlists.
-# If a commit listed in the `commits` field below is encountered then that commit will be skipped and no
-# secrets will be detected for said commit. The same logic applies for regexes and paths.
-[[allowlists]]
-description = "global allow list"
-commits = [ "commit-A", "commit-B", "commit-C"]
-paths = [
-  '''gitleaks\.toml''',
-  '''(.*?)(jpg|gif|doc)'''
-]
-# note: (global) regexTarget defaults to check the _Secret_ in the finding.
-# Acceptable values for regexTarget are "match" and "line"
-regexTarget = "match"
-regexes = [
-  '''219-09-9999''',
-  '''078-05-1120''',
-  '''(9[0-9]{2}|666)-\d{2}-\d{4}''',
-]
-# note: stopwords targets the extracted secret, not the entire regex match
-# like 'regexes' does. (stopwords introduced in 8.8.0)
-stopwords = [
-  '''client''',
-  '''endpoint''',
-]
-
-# ⚠️ In v8.25.0, `[[allowlists]]` have a new field called |targetRules|.
-#
-# Common allowlists can be defined once and assigned to multiple rules using |targetRules|.
-# This will only run on the specified rules, not globally.
-[[allowlists]]
-targetRules = ["awesome-rule-1", "awesome-rule-2"]
-description = "Our test assets trigger false-positives in a couple rules."
-paths = ['''tests/expected/._\.json$''']
-```
-
-Refer to the default [gitleaks config](https://github.com/gitleaks/gitleaks/blob/master/config/gitleaks.toml) for examples or follow the [contributing guidelines](https://github.com/gitleaks/gitleaks/blob/master/CONTRIBUTING.md) if you would like to contribute to the default configuration. Additionally, you can check out [this gitleaks blog post](https://blog.gitleaks.io/stop-leaking-secrets-configuration-2-3-aeed293b1fbf) which covers advanced configuration setups.
-
-### Additional Configuration
-
-#### Composite Rules (Multi-part or `required` Rules)
-In v8.28.0 Gitleaks introduced composite rules, which are made up of a single "primary" rule and one or more auxiliary or `required` rules. To create a composite rule, add a `[[rules.required]]` table to the primary rule specifying an `id` and optionally `withinLines` and/or `withinColumns` proximity constraints. A fragment is a chunk of content that Gitleaks processes at once (typically a file, part of a file, or git diff), and proximity matching instructs the primary rule to only report a finding if the auxiliary `required` rules also find matches within the specified area of the fragment.
-
-**Proximity matching:** Using the `withinLines` and `withinColumns` fields instructs the primary rule to only report a finding if the auxiliary `required` rules also find matches within the specified proximity. You can set:
-
-- **`withinLines: N`** - required findings must be within N lines (vertically)
-- **`withinColumns: N`** - required findings must be within N characters (horizontally)
-- **Both** - creates a rectangular search area (both constraints must be satisfied)
-- **Neither** - fragment-level matching (required findings can be anywhere in the same fragment)
-
-Here are diagrams illustrating each proximity behavior:
-
-```
-p = primary captured secret
-a = auxiliary (required) captured secret
-fragment = section of data gitleaks is looking at
-
-
-    *Fragment-level proximity*
-    Any required finding in the fragment
-          ┌────────┐
-   ┌──────┤fragment├─────┐
-   │      └──────┬─┤     │ ┌───────┐
-   │             │a│◀────┼─│✓ MATCH│
-   │          ┌─┐└─┘     │ └───────┘
-   │┌─┐       │p│        │
-   ││a│    ┌─┐└─┘        │ ┌───────┐
-   │└─┘    │a│◀──────────┼─│✓ MATCH│
-   └─▲─────┴─┴───────────┘ └───────┘
-     │    ┌───────┐
-     └────│✓ MATCH│
-          └───────┘
-
-
-   *Column bounded proximity*
-   `withinColumns = 3`
-          ┌────────┐
-   ┌────┬─┤fragment├─┬───┐
-   │      └──────┬─┤     │ ┌───────────┐
-   │    │        │a│◀┼───┼─│+1C ✓ MATCH│
-   │          ┌─┐└─┘     │ └───────────┘
-   │┌─┐ │     │p│    │   │
-┌──▶│a│  ┌─┐  └─┘        │ ┌───────────┐
-│  │└─┘ ││a│◀────────┼───┼─│-2C ✓ MATCH│
-│  │       ┘             │ └───────────┘
-│  └── -3C ───0C─── +3C ─┘
-│  ┌─────────┐
-│  │ -4C ✗ NO│
-└──│  MATCH  │
-   └─────────┘
-
-
-   *Line bounded proximity*
-   `withinLines = 4`
-         ┌────────┐
-   ┌─────┤fragment├─────┐
-  +4L─ ─ ┴────────┘─ ─ ─│
-   │                    │
-   │              ┌─┐   │ ┌────────────┐
-   │         ┌─┐  │a│◀──┼─│+1L ✓ MATCH │
-   0L  ┌─┐   │p│  └─┘   │ ├────────────┤
-   │   │a│◀──┴─┴────────┼─│-1L ✓ MATCH │
-   │   └─┘              │ └────────────┘
-   │                    │ ┌─────────┐
-  -4L─ ─ ─ ─ ─ ─ ─ ─┌─┐─│ │-5L ✗ NO │
-   │                │a│◀┼─│  MATCH  │
-   └────────────────┴─┴─┘ └─────────┘
-
-
-   *Line and column bounded proximity*
-   `withinLines = 4`
-   `withinColumns = 3`
-         ┌────────┐
-   ┌─────┤fragment├─────┐
-  +4L   ┌└────────┴ ┐   │
-   │            ┌─┐     │ ┌───────────────┐
-   │    │       │a│◀┼───┼─│+2L/+1C ✓ MATCH│
-   │         ┌─┐└─┘     │ └───────────────┘
-   0L   │    │p│    │   │
-   │         └─┘        │
-   │    │           │   │ ┌────────────┐
-  -4L    ─ ─ ─ ─ ─ ─┌─┐ │ │-5L/+3C ✗ NO│
-   │                │a│◀┼─│   MATCH    │
-   └───-3C────0L───+3C┴─┘ └────────────┘
-```
-
-<details><summary>Some final quick thoughts on composite rules.</summary>This is an experimental feature! It's subject to change so don't go sellin' a new B2B SaaS feature built ontop of this feature. Scan type (git vs dir) based context is interesting. I'm monitoring the situation. Composite rules might not be super useful for git scans because gitleaks only looks at additions in the git history. It could be useful to scan non-additions in git history for `required` rules. Oh, right this is a readme, I'll shut up now.</details>
-
-#### gitleaks:allow
-
-If you are knowingly committing a test secret that gitleaks will catch you can add a `gitleaks:allow` comment to that line which will instruct gitleaks
-to ignore that secret. Ex:
-
-```
-class CustomClass:
-    discord_client_secret = '8dyfuiRyq=vVc3RRr_edRk-fK__JItpZ'  #gitleaks:allow
-
-```
-
-#### .gitleaksignore
-
-You can ignore specific findings by creating a `.gitleaksignore` file at the root of your repo. In release v8.10.0 Gitleaks added a `Fingerprint` value to the Gitleaks report. Each leak, or finding, has a Fingerprint that uniquely identifies a secret. Add this fingerprint to the `.gitleaksignore` file to ignore that specific secret. See Gitleaks' [.gitleaksignore](https://github.com/gitleaks/gitleaks/blob/master/.gitleaksignore) for an example. Note: this feature is experimental and is subject to change in the future.
-
-#### Decoding
-
-Sometimes secrets are encoded in a way that can make them difficult to find
-with just regex. Now you can tell gitleaks to automatically find and decode
-encoded text. The flag `--max-decode-depth` enables this feature (the default
-value "0" means the feature is disabled by default).
-
-Recursive decoding is supported since decoded text can also contain encoded
-text.  The flag `--max-decode-depth` sets the recursion limit. Recursion stops
-when there are no new segments of encoded text to decode, so setting a really
-high max depth doesn't mean it will make that many passes. It will only make as
-many as it needs to decode the text. Overall, decoding only minimally increases
-scan times.
-
-The findings for encoded text differ from normal findings in the following
-ways:
-
-- The location points the bounds of the encoded text
-  - If the rule matches outside the encoded text, the bounds are adjusted to
-    include that as well
-- The match and secret contain the decoded value
-- Two tags are added `decoded:<encoding>` and `decode-depth:<depth>`
-
-Currently supported encodings:
-
-- **percent** - Any printable ASCII percent encoded values
-- **hex** - Any printable ASCII hex encoded values >= 32 characters
-- **base64** - Any printable ASCII base64 encoded values >= 16 characters
-
-#### Archive Scanning
-
-Sometimes secrets are packaged within archive files like zip files or tarballs,
-making them difficult to discover. Now you can tell gitleaks to automatically
-extract and scan the contents of archives. The flag `--max-archive-depth`
-enables this feature for both `dir` and `git` scan types. The default value of
-"0" means this feature is disabled by default.
-
-Recursive scanning is supported since archives can also contain other archives.
-The `--max-archive-depth` flag sets the recursion limit. Recursion stops when
-there are no new archives to extract, so setting a very high max depth just
-sets the potential to go that deep. It will only go as deep as it needs to.
-
-The findings for secrets located within an archive will include the path to the
-file inside the archive. Inner paths are separated with `!`.
-
-Example finding (shortened for brevity):
-
-```
-Finding:     DB_PASSWORD=8ae31cacf141669ddfb5da
-...
-File:        testdata/archives/nested.tar.gz!archives/files.tar!files/.env.prod
-Line:        4
-Commit:      6e6ee6596d337bb656496425fb98644eb62b4a82
-...
-Fingerprint: 6e6ee6596d337bb656496425fb98644eb62b4a82:testdata/archives/nested.tar.gz!archives/files.tar!files/.env.prod:generic-api-key:4
-Link:        https://github.com/leaktk/gitleaks/blob/6e6ee6596d337bb656496425fb98644eb62b4a82/testdata/archives/nested.tar.gz
-```
-
-This means a secret was detected on line 4 of `files/.env.prod.` which is in
-`archives/files.tar` which is in `testdata/archives/nested.tar.gz`.
-
-Currently supported formats:
-
-The [compression](https://github.com/mholt/archives?tab=readme-ov-file#supported-compression-formats)
-and [archive](https://github.com/mholt/archives?tab=readme-ov-file#supported-archive-formats)
-formats supported by mholt's [archives package](https://github.com/mholt/archives)
-are supported.
-
-#### Reporting
-
-Gitleaks has built-in support for several report formats: [`json`](https://github.com/gitleaks/gitleaks/blob/master/testdata/expected/report/json_simple.json), [`csv`](https://github.com/gitleaks/gitleaks/blob/master/testdata/expected/report/csv_simple.csv?plain=1), [`junit`](https://github.com/gitleaks/gitleaks/blob/master/testdata/expected/report/junit_simple.xml), and [`sarif`](https://github.com/gitleaks/gitleaks/blob/master/testdata/expected/report/sarif_simple.sarif).
-
-If none of these formats fit your need, you can create your own report format with a [Go `text/template` .tmpl file](https://www.digitalocean.com/community/tutorials/how-to-use-templates-in-go#step-4-writing-a-template) and the `--report-template` flag. The template can use [extended functionality from the `Masterminds/sprig` template library](https://masterminds.github.io/sprig/).
-
-For example, the following template provides a custom JSON output:
-```gotemplate
-# jsonextra.tmpl
-[{{ $lastFinding := (sub (len . ) 1) }}
-{{- range $i, $finding := . }}{{with $finding}}
-    {
-        "Description": {{ quote .Description }},
-        "StartLine": {{ .StartLine }},
-        "EndLine": {{ .EndLine }},
-        "StartColumn": {{ .StartColumn }},
-        "EndColumn": {{ .EndColumn }},
-        "Line": {{ quote .Line }},
-        "Match": {{ quote .Match }},
-        "Secret": {{ quote .Secret }},
-        "File": "{{ .File }}",
-        "SymlinkFile": {{ quote .SymlinkFile }},
-        "Commit": {{ quote .Commit }},
-        "Entropy": {{ .Entropy }},
-        "Author": {{ quote .Author }},
-        "Email": {{ quote .Email }},
-        "Date": {{ quote .Date }},
-        "Message": {{ quote .Message }},
-        "Tags": [{{ $lastTag := (sub (len .Tags ) 1) }}{{ range $j, $tag := .Tags }}{{ quote . }}{{ if ne $j $lastTag }},{{ end }}{{ end }}],
-        "RuleID": {{ quote .RuleID }},
-        "Fingerprint": {{ quote .Fingerprint }}
-    }{{ if ne $i $lastFinding }},{{ end }}
-{{- end}}{{ end }}
-]
-```
-
-Usage:
-```sh
-$ gitleaks dir ~/leaky-repo/ --report-path "report.json" --report-format template --report-template testdata/report/jsonextra.tmpl
-```
-
-## Sponsorships
-
-<p align="left">
-	<h3><a href="https://coderabbit.ai/?utm_source=oss&utm_medium=sponsorship&utm_campaign=gitleaks">coderabbit.ai</h3>
-	  <a href="https://coderabbit.ai/?utm_source=oss&utm_medium=sponsorship&utm_campaign=gitleaks">
-		  <img alt="CodeRabbit.ai Sponsorship" src="https://github.com/gitleaks/gitleaks/assets/15034943/76c30a85-887b-47ca-9956-17a8e55c6c41" width=200>
-	  </a>
-</p>
-
-
-## Exit Codes
-
-You can always set the exit code when leaks are encountered with the --exit-code flag. Default exit codes below:
-
-```
-0 - no leaks present
-1 - leaks or error encountered
-126 - unknown flag
-```
-
-### Join the Discord! [![Discord](https://img.shields.io/discord/1102689410522284044.svg?label=&logo=discord&logoColor=ffffff&color=7389D8&labelColor=6A7EC2)](https://discord.gg/8Hzbrnkr7E)
+##### Using a Package manager
+
+For projects in the `--npm`, `--pypi`, `--rubygems`, or `--nuget` ecosystems, you have the
+option to run Scorecard using a package manager. Provide the package name to
+run the checks on the corresponding GitHub source code.
+
+For example, `--npm=angular`.
+
+Note: The package ecosystem flags are to find a GitHub repo only. 
+These flags do not change the final evaluation for the checks. 
+
+Additionally, the flags cannot be used with `--repo`.
+
+##### Running specific checks
+
+To run only specific check(s), add the `--checks` argument with a list of check
+names.
+
+For example, `--checks=CI-Tests,Code-Review`.
+
+##### Formatting Results
+
+The currently supported formats are `default` (text) and `json`.
+
+These may be specified with the `--format` flag. For example, `--format=json`.
+
+
+
+## Checks
+
+### Scorecard Checks
+
+The following checks are all run against the target project by default:
+
+Name        | Description                               | Risk Level | Token Required  | GitLab Support | Note
+----------- | ----------------------------------------- | ---------- | --------------- | -------------- | --- |
+[Binary-Artifacts](docs/checks.md#binary-artifacts)             | Is the project free of checked-in binaries?     | High               | PAT, GITHUB_TOKEN   | Supported |
+[Branch-Protection](docs/checks.md#branch-protection)           | Does the project use [Branch Protection](https://docs.github.com/en/free-pro-team@latest/github/administering-a-repository/about-protected-branches) ?                                                                                                                                                                       | High | PAT (`repo` or `repo> public_repo`), GITHUB_TOKEN    | Supported (see notes) | certain settings are only supported with a maintainer PAT
+[CI-Tests](docs/checks.md#ci-tests)                             | Does the project run tests in CI, e.g. [GitHub Actions](https://docs.github.com/en/free-pro-team@latest/actions), [Prow](https://github.com/kubernetes/test-infra/tree/master/prow)?                                                                                                                                         | Low | PAT, GITHUB_TOKEN   | Supported
+[CII-Best-Practices](docs/checks.md#cii-best-practices)         | Has the project earned an [OpenSSF (formerly CII) Best Practices Badge](https://www.bestpractices.dev) at the passing, silver, or gold level?                                                                                                                                                                 | Low  | PAT, GITHUB_TOKEN   | Validating |
+[Code-Review](docs/checks.md#code-review)                       | Does the project practice code review before code is merged?                                                                                                                                                                                                                                                                 | High | PAT, GITHUB_TOKEN   | Validating |
+[Contributors](docs/checks.md#contributors)                     | Does the project have contributors from at least two different organizations?                                                                                                                                                                                                                                                | Low | PAT, GITHUB_TOKEN   | Validating |
+[Dangerous-Workflow](docs/checks.md#dangerous-workflow)         | Does the project avoid dangerous coding patterns in GitHub Action workflows?                                                                                                                                                                                                                                                 | Critical | PAT, GITHUB_TOKEN   | Unsupported |
+[Dependency-Update-Tool](docs/checks.md#dependency-update-tool) | Does the project use tools to help update its dependencies?                                                                                                                                                                                                                                                                  | High | PAT, GITHUB_TOKEN   | Unsupported |
+[Fuzzing](docs/checks.md#fuzzing)                               | Does the project use fuzzing tools, e.g. [OSS-Fuzz](https://github.com/google/oss-fuzz), [QuickCheck](https://hackage.haskell.org/package/QuickCheck) or [fast-check](https://fast-check.dev/)?                                                                                                                                                                                                                                     | Medium | PAT, GITHUB_TOKEN   | Validating
+[License](docs/checks.md#license)                               | Does the project declare a license?                                                                                                                                                                                                                                                                                          | Low | PAT, GITHUB_TOKEN   | Validating |
+[Maintained](docs/checks.md#maintained)                         | Is the project at least 90 days old, and maintained?                                                                                                                                                                                                                                                                                                   | High | PAT, GITHUB_TOKEN   | Validating |
+[Pinned-Dependencies](docs/checks.md#pinned-dependencies)       | Does the project declare and pin [dependencies](https://docs.github.com/en/free-pro-team@latest/github/visualizing-repository-data-with-graphs/about-the-dependency-graph#supported-package-ecosystems)?                                                                                                                     | Medium | PAT, GITHUB_TOKEN   | Validating |
+[Packaging](docs/checks.md#packaging)                           | Does the project build and publish official packages from CI/CD, e.g. [GitHub Publishing](https://docs.github.com/en/free-pro-team@latest/actions/guides/about-packaging-with-github-actions#workflows-for-publishing-packages) ?                                                                                            | Medium | PAT, GITHUB_TOKEN   | Validating |
+[SAST](docs/checks.md#sast)                                     | Does the project use static code analysis tools, e.g. [CodeQL](https://docs.github.com/en/free-pro-team@latest/github/finding-security-vulnerabilities-and-errors-in-your-code/enabling-code-scanning-for-a-repository#enabling-code-scanning-using-actions), [LGTM (deprecated)](https://lgtm.com), [SonarCloud](https://sonarcloud.io)? | Medium | PAT, GITHUB_TOKEN   | Unsupported |
+[Security-Policy](docs/checks.md#security-policy)               | Does the project contain a [security policy](https://docs.github.com/en/free-pro-team@latest/github/managing-security-vulnerabilities/adding-a-security-policy-to-your-repository)?                                                                                                                                          | Medium | PAT, GITHUB_TOKEN   | Validating |
+[Signed-Releases](docs/checks.md#signed-releases)               | Does the project cryptographically [sign releases](https://wiki.debian.org/Creating%20signed%20GitHub%20releases)?                                                                                                                                                                                                           | High | PAT, GITHUB_TOKEN   | Validating |
+[Token-Permissions](docs/checks.md#token-permissions)           | Does the project declare GitHub workflow tokens as [read only](https://docs.github.com/en/actions/reference/authentication-in-a-workflow)?                                                                                                                                                                                   | High | PAT, GITHUB_TOKEN   | Unsupported |
+[Vulnerabilities](docs/checks.md#vulnerabilities)               | Does the project have unfixed vulnerabilities? Uses the [OSV service](https://osv.dev).                                                                                                                                                                                                                                      | High | PAT, GITHUB_TOKEN   | Validating |
+[Webhooks](docs/checks.md#webhooks)                             | Does the webhook defined in the repository have a token configured to authenticate the origins of requests?                                                                                                                                                                                                                                      | Critical | maintainer PAT (`admin: repo_hook` or `admin> read:repo_hook` [doc](https://docs.github.com/en/rest/webhooks/repo-config#get-a-webhook-configuration-for-a-repository)  |  | EXPERIMENTAL
+
+### Detailed Checks Documentation
+
+To see detailed information about each check, its scoring criteria, and
+remediation steps, check out the [checks documentation page](docs/checks.md).
+
+### Beginner's Guide to Scorecard Checks
+
+For a guide to the checks you should use when getting started, see the [beginner's guide to scorecard checks](docs/beginner-checks.md).
+
+## Other Important Recommendations
+
+### Two-factor Authentication (2FA)
+
+[Two-factor Authentication (2FA)](https://docs.github.com/en/authentication/securing-your-account-with-two-factor-authentication-2fa/about-two-factor-authentication) adds an extra layer of security when logging into websites or apps. 2FA protects your account if your password is compromised by requiring a second form of authentication, such as codes sent via SMS or authentication app, or touching a physical security key.
+
+We strongly recommend that you enable 2FA on any important accounts where it is available. 2FA is not a Scorecard check because GitHub and GitLab do not make that data about user accounts public. Arguably, this data should always remain private, since accounts without 2FA are so vulnerable to attack.
+
+Though it is not an official check, we urge all project maintainers to enable 2FA to protect their projects from compromise.
+
+#### Enabling 2FA
+
+##### For users
+
+Follow the steps described at [Configuring two-factor authentication](https://docs.github.com/en/authentication/securing-your-account-with-two-factor-authentication-2fa/configuring-two-factor-authentication)
+
+If possible, use either:
+
+- physical security key (preferred), such as Titan or Yubikey
+- recovery codes, stored in an access protected and encrypted vault
+
+As a last option, use SMS. Beware: 2FA using SMS is vulnerable to [SIM swap attack](https://en.wikipedia.org/wiki/SIM_swap_scam).
+
+##### For an organization
+
+1. [Prepare to require 2FA in your organization](https://docs.github.com/en/organizations/keeping-your-organization-secure/managing-two-factor-authentication-for-your-organization/preparing-to-require-two-factor-authentication-in-your-organization)
+2. [Require 2FA in your organization](https://docs.github.com/en/organizations/keeping-your-organization-secure/managing-two-factor-authentication-for-your-organization/requiring-two-factor-authentication-in-your-organization)
+
+## Scoring
+
+### Aggregate Score
+Each individual check returns a score of 0 to 10, with 10 representing the best
+possible score. Scorecard also produces an aggregate score, which is a
+weight-based average of the individual checks weighted by risk.
+
+*   “Critical” risk checks are weighted at 10
+*   “High” risk checks are weighted at 7.5
+*   “Medium” risk checks are weighted at 5
+*   “Low” risk checks are weighted at 2.5
+
+See the [list of current Scorecard checks](#scorecard-checks) for each check's
+risk level.
+
+## Contribute
+
+### Report Problems
+
+If you have what looks like a bug, please use the
+[GitHub issue tracking system.](https://github.com/ossf/scorecard/issues) Before
+you file an issue, please search existing issues to see if your issue is already
+covered.
+
+### Contribute to Scorecard
+
+Before contributing, please follow our [Code of Conduct](CODE_OF_CONDUCT.md).
+
+See the [Contributing](CONTRIBUTING.md) documentation for guidance on how to
+contribute to the project.
+
+### Adding a Scorecard Check
+
+If you'd like to add a check, please see guidance [here](checks/write.md).
+
+### Connect with the Scorecard Community
+
+If you want to get involved in the Scorecard community or have ideas you'd like
+to chat about, we discuss this project in the
+[OSSF Best Practices Working Group](https://github.com/ossf/wg-best-practices-os-developers)
+meetings.
+
+Artifact                      | Link
+----------------------------- | ----
+Scorecard Dev Forum           | [ossf-scorecard-dev@](https://groups.google.com/g/ossf-scorecard-dev)
+Scorecard Announcements Forum | [ossf-scorecard-announce@](https://groups.google.com/g/ossf-scorecard-announce)
+Community Meeting VC          | [Link to z o o m meeting](https://zoom-lfx.platform.linuxfoundation.org/meeting/95007214146?password=250040c3-80c0-48c4-80c1-07a373116d54)
+Community Meeting Calendar    | **_APAC-friendly_** Biweekly on Thursdays at 1:00-2:00 PM Pacific ([OSSF Public Calendar](https://calendar.google.com/calendar/u/0/embed?height=600&wkst=1&bgcolor=%238E24AA&showTitle=1&mode=WEEK&showCalendars=0&showTabs=1&showPrint=0&title=OpenSSF+Community+Calendar&src=czYzdm9lZmhwNWk5cGZsdGI1cTY3bmdwZXNAZ3JvdXAuY2FsZW5kYXIuZ29vZ2xlLmNvbQ&color=%238E24AA)) <br>Video Call: [LFX Zoom](https://zoom-lfx.platform.linuxfoundation.org/meeting/95007214146?password=250040c3-80c0-48c4-80c1-07a373116d54) <br> **_EMEA-friendly_** Every 4 Mondays at 7:00-8:00 AM Pacific ([OSSF Public Calendar](https://calendar.google.com/calendar/u/0/embed?height=600&wkst=1&bgcolor=%238E24AA&showTitle=1&mode=WEEK&showCalendars=0&showTabs=1&showPrint=0&title=OpenSSF+Community+Calendar&src=czYzdm9lZmhwNWk5cGZsdGI1cTY3bmdwZXNAZ3JvdXAuY2FsZW5kYXIuZ29vZ2xlLmNvbQ&color=%238E24AA)) <br> Video Call: [LFX Zoom](https://zoom-lfx.platform.linuxfoundation.org/meeting/93377638314?password=d53af562-d908-4100-8ae1-52686756cc5d)
+Meeting Notes                 | [Notes](https://docs.google.com/document/d/1b6d3CVJLsl7YnTE7ZaZQHdkdYIvuOQ8rzAmvVdypOWM/edit?usp=sharing)
+Slack Channel                 | [#scorecard](https://slack.openssf.org/#scorecard)
+
+__Maintainers__ are listed in the [CODEOWNERS file](.github/CODEOWNERS).
+
+### Report a Security Issue
+
+To report a security issue, please follow instructions [here](SECURITY.md).
+
+### Join the Scorecard Project Meeting
+
+#### Zoom
+
+**_APAC-friendly_** Biweekly on Thursdays at 1:00-2:00 PM Pacific ([OSSF Public Calendar](https://calendar.google.com/calendar/u/0/embed?height=600&wkst=1&bgcolor=%238E24AA&showTitle=1&mode=WEEK&showCalendars=0&showTabs=1&showPrint=0&title=OpenSSF+Community+Calendar&src=czYzdm9lZmhwNWk5cGZsdGI1cTY3bmdwZXNAZ3JvdXAuY2FsZW5kYXIuZ29vZ2xlLmNvbQ&color=%238E24AA)) 
+
+Video Call: [LFX z o o m](https://zoom-lfx.platform.linuxfoundation.org/meeting/95007214146?password=250040c3-80c0-48c4-80c1-07a373116d54)   
+
+**_EMEA-friendly_** Every 4 Mondays at 7:00-8:00 AM Pacific ([OSSF Public Calendar](https://calendar.google.com/calendar/u/0/embed?height=600&wkst=1&bgcolor=%238E24AA&showTitle=1&mode=WEEK&showCalendars=0&showTabs=1&showPrint=0&title=OpenSSF+Community+Calendar&src=czYzdm9lZmhwNWk5cGZsdGI1cTY3bmdwZXNAZ3JvdXAuY2FsZW5kYXIuZ29vZ2xlLmNvbQ&color=%238E24AA))
+
+Video Call: [LFX z o o m](https://zoom-lfx.platform.linuxfoundation.org/meeting/93377638314?password=d53af562-d908-4100-8ae1-52686756cc5d)   
+
+#### Agenda
+
+You can see the [agenda and meeting notes here](https://docs.google.com/document/d/1b6d3CVJLsl7YnTE7ZaZQHdkdYIvuOQ8rzAmvVdypOWM/edit?usp=sharing).
+
+
+## Stargazers over time
+
+[![Stargazers over time](https://starchart.cc/ossf/scorecard.svg)](https://starchart.cc/ossf/scorecard)
+
+
+## FAQ
+
+### FAQ
+
+See the [FAQ](docs/faq.md) for answers to Frequently Asked Questions about Scorecard.

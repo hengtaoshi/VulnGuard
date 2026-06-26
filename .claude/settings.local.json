@@ -154,7 +154,20 @@
       "Bash(git *)",
       "Bash(npm test *)",
       "Bash(tasklist)",
-      "Bash(xargs wc -l)"
+      "Bash(xargs wc -l)",
+      "Bash(taskkill /f /im node.exe)",
+      "Bash(HTTP_PROXY=http://127.0.0.1:7897 HTTPS_PROXY=http://127.0.0.1:7897 http_proxy=http://127.0.0.1:7897 https_proxy=http://127.0.0.1:7897 node scripts/build-electron.js --win)",
+      "Bash(tasklist /fi \"IMAGENAME eq node.exe\")",
+      "Read(//c/Users/Administrator/AppData/Local/electron-builder/**)",
+      "Read(//c/Users/Administrator/AppData/Local/Cache/**)",
+      "Bash(HTTP_PROXY=http://127.0.0.1:7897 HTTPS_PROXY=http://127.0.0.1:7897 npx electron-builder --win --config electron-builder.yml --verbose)",
+      "Bash(HTTP_PROXY=http://127.0.0.1:7897 HTTPS_PROXY=http://127.0.0.1:7897 npx electron-builder --win --config electron-builder.yml)",
+      "Bash(rm -rf \"C:/Users/Administrator/AppData/Local/electron/Cache/\")",
+      "Bash(rm -rf \"C:/Users/Administrator/AppData/Local/electron-builder/Cache/\")",
+      "Bash(HTTP_PROXY=http://127.0.0.1:7897 HTTPS_PROXY=http://127.0.0.1:7897 npx electron-builder build --win --config electron-builder.yml -c.directories.output=dist-electron)",
+      "Bash(npx electron-builder *)",
+      "Bash(mkdir -p D:/DEMO/VulnGuard/electron-bin)",
+      "Bash(unzip -o \"C:/Users/Administrator/AppData/Local/electron/Cache/59ea157472003d1145e536a90686ae143ddd5bd99ef5b2bda2683be25aabe516/electron-v42.5.0-win32-x64.zip\")"
     ]
   }
 }

@@ -10,6 +10,7 @@ export interface ScanSession {
   riskScore: string
   totalChecks: number
   scannerEngine?: ScannerEngine
+  incremental?: boolean
   summary: { critical: number; high: number; medium: number; low: number; passed: number }
   vulnerabilities: Vulnerability[]
   scanners?: ScannerInfo[]

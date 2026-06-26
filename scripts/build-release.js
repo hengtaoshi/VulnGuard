@@ -120,6 +120,11 @@ function main() {
   copyFileSync(join(ROOT, "package.json"), join(APP_DIR, "package.json"))
   copyFileSync(join(ROOT, "next.config.mjs"), join(APP_DIR, "next.config.mjs"))
 
+  // Copy CLI
+  if (existsSync(join(ROOT, "cli"))) {
+    copyRecursive(join(ROOT, "cli"), join(APP_DIR, "cli"))
+  }
+
   // ── [4/7] Copy scanner binaries ────────────────────────────────────────
   log("[4/7] Copying scanner binaries...")
 

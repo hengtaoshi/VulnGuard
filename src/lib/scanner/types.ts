@@ -12,7 +12,7 @@ export interface Scanner {
   displayName: string
   category: string
   isAvailable(): boolean
-  scan(targetPath: string): Promise<ScanResult>
+  scan(targetPath: string, changedFiles?: string[]): Promise<ScanResult>
 }
 
 // ─── AI Aggregation Types ────────────────────────────────────────────────────

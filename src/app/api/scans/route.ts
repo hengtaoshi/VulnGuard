@@ -40,13 +40,16 @@ export async function POST(request: Request) {
       ? String(body.projectName).replace(/[/\\:]/g, "").slice(0, 200)
       : undefined
 
+    // Incremental mode flag
+    const incremental = body.incremental === true
+
     // Create scan session (scan starts when detail page loads)
     const session = createSession(mode, target, { totalFiles, skippedFiles, projectName })
-    updateSession(session.id, { status: "pending", scannerEngine: engine })
+    updateSession(session.id, { status: "pending", scannerEngine: engine, incremental })
 
     // Return immediately with the session ID
     return NextResponse.json(
-      { id: session.id, status: "pending", target: session.target, type: session.type, engine },
+      { id: session.id, status: "pending", target: session.target, type: session.type, engine, incremental },
       { status: 201 },
     )
   } catch (err) {

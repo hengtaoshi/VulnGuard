@@ -25,9 +25,10 @@ export async function POST(
 
   const target = session.target
   const engine: ScannerEngine = session.scannerEngine || "ai"
+  const incremental = session.incremental
 
   // Run composite scan in the background (don't await)
-  runCompositeScan(target, "source", params.id, engine)
+  runCompositeScan(target, "source", params.id, engine, incremental)
     .then(result => {
       const { vulnerabilities, totalChecks, scannerResults } = result
       const critical = vulnerabilities.filter(v => v.severity === "Critical").length

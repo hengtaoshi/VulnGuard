@@ -46,6 +46,27 @@ function makeScannerStatuses(scanners: { name: string; displayName: string; cate
   }))
 }
 
+// ─── 增量扫描：Git diff 检测 ────────────────────────────────────────────────
+
+/** 检测 git 变更文件。非 git 仓库或无变更时返回 null。 */
+function getChangedFiles(targetPath: string): string[] | null {
+  try {
+    execSync('git rev-parse --git-dir', { cwd: targetPath, stdio: 'pipe', timeout: 5000 })
+  } catch { return null }
+  try {
+    execSync('git rev-parse HEAD~1', { cwd: targetPath, stdio: 'pipe', timeout: 5000 })
+  } catch { return null }
+  try {
+    const result = execSync('git diff --name-only HEAD~1', { cwd: targetPath, stdio: 'pipe', timeout: 10000, encoding: 'utf-8' })
+    const files = result.toString().split('\n').map(f => f.trim()).filter(Boolean)
+    if (files.length === 0) return null
+    // ponytail: filter out paths with shell metacharacters ($, `, ;, |, etc.)
+    const SAFE_PATH = /^[\w./\\\- ()]+$/
+    const safe = files.filter(f => SAFE_PATH.test(f))
+    return safe.length > 0 ? safe : null
+  } catch { return null }
+}
+
 // ─── 规则驱动的扫描器选择 ─────────────────────────────────────────────────
 
 function selectScannersByRules(
@@ -73,7 +94,8 @@ function selectScannersByRules(
   }
 
   // JS/TS
-  if (configNames.has("hasPackageLock") || configNames.has("hasPackageJson")) {
+  if (configNames.has("hasPackageLock") || configNames.has("hasPackageJson") ||
+      configNames.has("hasPnpmLock") || configNames.has("hasYarnLock")) {
     selected.push("npm-audit")
   }
 
@@ -188,6 +210,7 @@ async function executeScanners(
   scannerNames: string[],
   targetPath: string,
   sessionId?: string,
+  changedFiles?: string[],
 ): Promise<CompositeResult> {
   const scannerMap = new Map(allScanners.map(s => [s.name, s]))
   const orderedScanners = scannerNames
@@ -302,7 +325,7 @@ async function executeScanners(
     const runOneScanner = async (s: Scanner): Promise<void> => {
       if (sessionId) addLog(sessionId, "scanner", "info", `Starting ${s.displayName}`, undefined, s.name)
       scannerStartTimes.set(s.name, Date.now())
-      const result = await s.scan(targetPath).catch(err => ({
+      const result = await s.scan(targetPath, changedFiles).catch(err => ({
         vulnerabilities: [], totalChecks: 0,
         errors: [(err as Error).message], scannerName: s.name,
       }))
@@ -400,6 +423,7 @@ export async function runCompositeScan(
   mode: "url" | "source" = "source",
   sessionId?: string,
   engine: ScannerEngine = "ai",
+  incremental?: boolean,
 ): Promise<CompositeResult> {
   const allScanners = getAllScanners()
   const availableScanners = getAvailableScanners()
@@ -474,6 +498,20 @@ export async function runCompositeScan(
     }
   }
 
+  // ── Phase 0.5: 增量扫描检测 ──────────────────────────────────────
+  let changedFiles: string[] | undefined
+  if (incremental) {
+    changedFiles = getChangedFiles(targetPath) ?? undefined
+    if (changedFiles && changedFiles.length > 0) {
+      if (sessionId) addLog(sessionId, "system", "info", `⚡ Incremental scan: ${changedFiles.length} files changed`)
+    } else {
+      if (sessionId) addLog(sessionId, "system", "info", changedFiles === undefined
+        ? "⚡ Incremental: not a git repo or no prior commit, falling back to full scan"
+        : "⚡ No files changed since last commit")
+      incremental = false
+    }
+  }
+
   let selectedScanners: string[] = []
 
   // 扫描器选择：始终使用规则引擎（确定性），不用 AI
@@ -491,8 +529,15 @@ export async function runCompositeScan(
   const statuses = makeScannerStatuses(selectedScannerObjects)
   setProgress(0, `📋 Rules matched: ${selectedScanners.length} scanners selected`, statuses)
 
+  // 增量模式：只跑支持文件级过滤的扫描器
+  if (incremental && changedFiles) {
+    const incrementalOk = new Set(["semgrep", "bandit", "npm-audit", "pip-audit"])
+    selectedScanners = selectedScanners.filter(s => incrementalOk.has(s))
+    if (sessionId) addLog(sessionId, "system", "info", `⚡ Incremental: running ${selectedScanners.join(", ")}`)
+  }
+
   // ── Phase 2: 执行扫描器 ─────────────────────────────────────────────
-  const result = await executeScanners(allScanners, selectedScanners, targetPath, sessionId)
+  const result = await executeScanners(allScanners, selectedScanners, targetPath, sessionId, changedFiles)
 
   // ── Phase 3: 误报过滤（.vulnguard-ignore + UI 标记）────────────────
   const { filtered: filteredVulns, ignoredCount } = filterIgnored(result.vulnerabilities)
