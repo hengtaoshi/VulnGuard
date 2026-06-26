@@ -48,6 +48,9 @@ jobs:
       - name: Setup electron-bin
         shell: bash
         run: |
+          echo "Ensuring electron binary is downloaded..."
+          node node_modules/electron/install.js
+          echo ""
           echo "Copying electron from node_modules/electron/dist/ to electron-bin/"
           mkdir -p electron-bin
           cp -r node_modules/electron/dist/* electron-bin/
