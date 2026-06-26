@@ -11,8 +11,8 @@
  */
 
 const { execSync } = require("child_process")
-const { existsSync, rmSync, cpSync } = require("fs")
-const { resolve } = require("path")
+const { existsSync, rmSync, cpSync, mkdirSync, readFileSync, copyFileSync, readdirSync, statSync } = require("fs")
+const { resolve, join } = require("path")
 
 const ROOT = resolve(__dirname, "..")
 const RELEASE_DIR = resolve(ROOT, "release")
@@ -44,16 +44,16 @@ function main() {
   console.log(`  ${COLORS.green}  VulnGuard Desktop Builder${COLORS.reset}`)
   console.log(`  ${COLORS.cyan}════════════════════════════════════════════${COLORS.reset}\n`)
 
-  // ── [1/6] Clean previous builds ──────────────────────────────────────────
-  log("[1/6] Cleaning previous builds...")
+  // ── [1/7] Clean previous builds ──────────────────────────────────────────
+  log("[1/7] Cleaning previous builds...")
   for (const dir of [".next", RELEASE_DIR]) {
     if (existsSync(dir)) {
       rmSync(dir, { recursive: true, force: true })
     }
   }
 
-  // ── [2/6] Build Next.js standalone ───────────────────────────────────────
-  log("[2/6] Building Next.js (standalone)...")
+  // ── [2/7] Build Next.js standalone ───────────────────────────────────────
+  log("[2/7] Building Next.js (standalone)...")
   run("npm run build")
 
   // Verify standalone output
@@ -64,14 +64,47 @@ function main() {
   }
   log("Next.js standalone build complete")
 
-  // ── [3/6] Remove tools/ from standalone (avoids asar ENOTEMPTY on nested codeql dir) ──
-  log("[3/6] Cleaning standalone artifacts...")
+  // ── [3/7] Remove tools/ from standalone (avoids asar ENOTEMPTY on nested codeql dir) ──
+  log("[3/7] Cleaning standalone artifacts...")
   const toolsDir = resolve(ROOT, ".next", "standalone", "tools")
   if (existsSync(toolsDir)) {
     rmSync(toolsDir, { recursive: true, force: true })
   }
 
-  // ── [4/6] Ensure standalone node_modules exists ─────────────────────────
+  // ── [4/6] Setup electron-bin (ensure Electron binary is available) ──────
+  log("[4/6] Setting up electron-bin directory...")
+  const electronDist = resolve(ROOT, "node_modules", "electron", "dist")
+  const electronBin = resolve(ROOT, "electron-bin")
+  if (!existsSync(electronBin) || !existsSync(join(electronBin, "electron.exe"))) {
+    if (existsSync(join(electronDist, "electron.exe"))) {
+      if (!existsSync(electronBin)) mkdirSync(electronBin, { recursive: true })
+      cpSync(electronDist, electronBin, { recursive: true })
+      log("electron-bin copied from node_modules/electron/dist")
+    } else {
+      log("electron.exe not found in node_modules — running electron install.js...", false)
+      try {
+        run("node node_modules/electron/install.js")
+        if (!existsSync(electronBin)) mkdirSync(electronBin, { recursive: true })
+        cpSync(electronDist, electronBin, { recursive: true })
+        log("electron-bin setup complete")
+      } catch (e) {
+        log(`electron install failed: ${e.message}`, false)
+        log("Trying fallback: node node_modules/.bin/electron ...")
+        try {
+          run("node node_modules/.bin/electron --version")
+          // electron.exe was found globally — use it directly
+          log("electron is available via PATH")
+        } catch (e2) {
+          log(`FATAL: cannot find electron binary: ${e2.message}`, false)
+          process.exit(1)
+        }
+      }
+    }
+  } else {
+    log("electron-bin already exists, skipping")
+  }
+
+  // ── [5/7] Ensure standalone node_modules exists ─────────────────────────
   const standaloneNodeModules = resolve(ROOT, ".next", "standalone", "node_modules")
   if (!existsSync(resolve(standaloneNodeModules, "next"))) {
     log("next module missing in standalone output — copying from project root")
@@ -81,9 +114,8 @@ function main() {
     }
   }
 
-  // ── [5/6] Copy static assets ─────────────────────────────────────────────
-  log("[5/6] Preparing static assets...")
-  const { cpSync } = require("fs")
+  // ── [6/7] Copy static assets ─────────────────────────────────────────────
+  log("[6/7] Preparing static assets...")
 
   // Copy .next/static to standalone
   const staticSrc = resolve(ROOT, ".next", "static")
@@ -100,7 +132,6 @@ function main() {
   }
 
   // Copy package.json and next.config.mjs
-  const { copyFileSync } = require("fs")
   copyFileSync(resolve(ROOT, "package.json"), resolve(ROOT, ".next", "standalone", "package.json"))
   copyFileSync(resolve(ROOT, "next.config.mjs"), resolve(ROOT, ".next", "standalone", "next.config.mjs"))
 
@@ -112,8 +143,8 @@ function main() {
 
   log("Static assets prepared")
 
-  // ── [6/6] Package with Electron Builder ────────────────────────────────────
-  log("[6/6] Packaging desktop application...")
+  // ── [7/7] Package with Electron Builder ────────────────────────────────────
+  log("[7/7] Packaging desktop application...")
 
   const buildCmd = target
     ? `npx electron-builder ${target} --config electron-builder.yml`
@@ -129,16 +160,17 @@ function main() {
     console.log(`  ${COLORS.green}════════════════════════════════════════════${COLORS.reset}\n`)
 
     // List output files
-    const { readdirSync } = require("fs")
     if (existsSync(RELEASE_DIR)) {
       for (const f of readdirSync(RELEASE_DIR)) {
-        const size = require("fs").statSync(resolve(RELEASE_DIR, f)).size
+        const size = statSync(resolve(RELEASE_DIR, f)).size
         console.log(`     ${COLORS.dim}${(size / 1024 / 1024).toFixed(1)} MB  ${f}${COLORS.reset}`)
       }
       console.log("")
     }
   } catch (err) {
     log(`Build failed: ${err.message}`, false)
+    if (err.stderr) console.error(`  ${COLORS.red}stderr:${COLORS.reset}\n${err.stderr.toString().slice(0, 2000)}`)
+    if (err.stdout) console.error(`  ${COLORS.red}stdout (last 30 lines):${COLORS.reset}`, err.stdout.toString().split("\n").slice(-30).join("\n"))
     process.exit(1)
   }
 }
