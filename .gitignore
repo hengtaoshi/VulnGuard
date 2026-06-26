@@ -57,3 +57,4 @@ dev-workflow.md
 Thumbs.db
 __pycache__/
 *.pyc
+.scanner-assets/

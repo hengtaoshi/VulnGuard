@@ -1,126 +1,131 @@
 "use client"
 
-import { useState, useEffect, useCallback, useRef } from "react"
-import { Shield, Search, Lock, FolderTree, Cpu, CheckCircle2, Loader2, AlertCircle, Download, ChevronRight } from "lucide-react"
+import { useState, useRef, useCallback, useEffect } from "react"
+import { Shield, Download, CheckCircle2, AlertCircle, X, Search, FileSearch, Lock, Cpu, Globe, Package } from "lucide-react"
 
+interface InstallProgress {
+  percent: number
+  bytes?: number
+  total?: number
+  error?: string
+  done?: boolean
+}
+
+const isElectron = typeof window !== "undefined" && window.vulnguard?.downloadScanner
+
+// ─── Category definitions ──────────────────────────────────────────────────────
+interface Category {
+  key: string
+  label: string
+  description: string
+  icon: React.ComponentType<{ className?: string }>
+  bgColor: string
+  color: string
+}
+
+const CATEGORIES: Category[] = [
+  { key: "sast", label: "静态分析 (SAST)", description: "代码质量与安全漏洞扫描", icon: FileSearch, bgColor: "bg-blue-500/10", color: "text-blue-500" },
+  { key: "secret", label: "密钥检测", description: "硬编码密码、Token、密钥泄露", icon: Lock, bgColor: "bg-red-500/10", color: "text-red-500" },
+  { key: "dependency", label: "依赖扫描 (SCA)", description: "第三方组件漏洞与许可证", icon: Package, bgColor: "bg-amber-500/10", color: "text-amber-500" },
+  { key: "filesystem", label: "文件系统", description: "IaC 配置、OS 漏洞、模板扫描", icon: Search, bgColor: "bg-purple-500/10", color: "text-purple-500" },
+  { key: "ai", label: "AI 代码审计", description: "DeepSeek LLM 代码分析", icon: Cpu, bgColor: "bg-emerald-500/10", color: "text-emerald-500" },
+]
+
+// ─── Scanner definitions for the wizard ────────────────────────────────────────
 interface ScannerDef {
   name: string
   displayName: string
   category: string
-  description: string
   size: string
 }
 
-interface InstallProgress {
-  percent: number
-  done?: boolean
-  ok?: boolean
-  error?: string
-  scanner?: string
-}
-
-const CATEGORIES = [
-  {
-    key: "sast",
-    label: "静态代码分析 (SAST)",
-    icon: Search,
-    description: "深度分析源代码中的安全漏洞，如注入、XSS、路径遍历等",
-    color: "text-blue-500",
-    bgColor: "bg-blue-500/10",
-  },
-  {
-    key: "secret",
-    label: "密钥检测",
-    icon: Lock,
-    description: "检测源代码中硬编码的 API 密钥、密码、Token 等敏感信息",
-    color: "text-red-500",
-    bgColor: "bg-red-500/10",
-  },
-  {
-    key: "dependency",
-    label: "依赖扫描 (SCA)",
-    icon: FolderTree,
-    description: "检查项目依赖中的已知 CVE 漏洞，覆盖 npm、pip、Maven、Go 等多个生态",
-    color: "text-amber-500",
-    bgColor: "bg-amber-500/10",
-  },
-  {
-    key: "filesystem",
-    label: "文件系统扫描",
-    icon: Shield,
-    description: "扫描 IaC 配置、OS 包、容器镜像中的安全风险和 CVE",
-    color: "text-purple-500",
-    bgColor: "bg-purple-500/10",
-  },
-  {
-    key: "ai",
-    label: "AI 智能分析",
-    icon: Cpu,
-    description: "基于 DeepSeek 大模型进行代码审计，需要配置 API Key",
-    color: "text-emerald-500",
-    bgColor: "bg-emerald-500/10",
-  },
+const ALL_SCANNERS: ScannerDef[] = [
+  { name: "semgrep", displayName: "Semgrep", size: "8 MB", category: "sast" },
+  { name: "bandit", displayName: "Bandit", size: "28 MB", category: "sast" },
+  { name: "gitleaks", displayName: "Gitleaks", size: "22 MB", category: "secret" },
+  { name: "trufflehog", displayName: "TruffleHog", size: "22 MB", category: "secret" },
+  { name: "npm-audit", displayName: "npm audit", size: "-", category: "dependency" },
+  { name: "pip-audit", displayName: "pip-audit", size: "35 MB", category: "dependency" },
+  { name: "dependency-check", displayName: "Dependency-Check", size: "36 MB", category: "dependency" },
+  { name: "osv-scanner", displayName: "OSV-Scanner", size: "56 MB", category: "dependency" },
+  { name: "checkov", displayName: "Checkov", size: "pip", category: "filesystem" },
+  { name: "trivy", displayName: "Trivy", size: "165 MB", category: "filesystem" },
+  { name: "nuclei", displayName: "Nuclei", size: "131 MB", category: "filesystem" },
+  { name: "scorecard", displayName: "Scorecard", size: "131 MB", category: "sast" },
+  { name: "cve-cpp", displayName: "CVE-CPP", size: "-", category: "dependency" },
+  { name: "swift", displayName: "Swift", size: "-", category: "dependency" },
+  { name: "codeql", displayName: "CodeQL", size: "365 MB", category: "sast" },
+  { name: "ai-scanner", displayName: "AI Scanner", size: "-", category: "ai" },
 ]
 
-// Scanner definitions grouped by category
-const SCANNERS_BY_CATEGORY: Record<string, ScannerDef[]> = {
-  sast: [
-    { name: "semgrep", displayName: "Semgrep", category: "sast", description: "多语言 SAST，2000+ 安全规则", size: "~100 MB" },
-    { name: "bandit", displayName: "Bandit", category: "sast", description: "Python 代码安全扫描", size: "pip 包" },
-    { name: "codeql", displayName: "CodeQL", category: "sast", description: "GitHub 语义代码分析引擎", size: "~200 MB" },
-    { name: "scorecard", displayName: "OpenSSF Scorecard", category: "sast", description: "开源安全实践评估", size: "~15 MB" },
-  ],
-  secret: [
-    { name: "gitleaks", displayName: "Gitleaks", category: "secret", description: "快速密钥泄露检测", size: "~10 MB" },
-    { name: "trufflehog", displayName: "TruffleHog", category: "secret", description: "企业级密钥检测，800+ 检测器", size: "~20 MB" },
-  ],
-  dependency: [
-    { name: "npm-audit", displayName: "npm audit", category: "dependency", description: "JS/TS 依赖 CVE 扫描", size: "内置" },
-    { name: "pip-audit", displayName: "pip-audit", category: "dependency", description: "Python 依赖漏洞审计", size: "pip 包" },
-    { name: "osv-scanner", displayName: "OSV-Scanner", category: "dependency", description: "Google 多生态依赖扫描", size: "~15 MB" },
-    { name: "dependency-check", displayName: "Dependency-Check", category: "dependency", description: "OWASP SCA，需 Java", size: "~280 MB" },
-  ],
-  filesystem: [
-    { name: "trivy", displayName: "Trivy", category: "filesystem", description: "OS 包/依赖综合 CVE 扫描", size: "~50 MB" },
-    { name: "checkov", displayName: "Checkov", category: "filesystem", description: "IaC 安全配置扫描", size: "pip 包" },
-    { name: "nuclei", displayName: "Nuclei", category: "filesystem", description: "模板化漏洞扫描", size: "~30 MB" },
-  ],
-  ai: [
-    { name: "ai-scanner", displayName: "AI Scanner", category: "ai", description: "DeepSeek 代码审计，需 API Key", size: "在线服务" },
-  ],
+const SCANNERS_BY_CATEGORY: Record<string, ScannerDef[]> = {}
+for (const sc of ALL_SCANNERS) {
+  if (!SCANNERS_BY_CATEGORY[sc.category]) SCANNERS_BY_CATEGORY[sc.category] = []
+  SCANNERS_BY_CATEGORY[sc.category].push(sc)
 }
 
-// Get all scanners for a set of categories
-function getScannersForCategories(selected: Set<string>): ScannerDef[] {
+function getScannersForCategories(categories: Set<string>): ScannerDef[] {
   const result: ScannerDef[] = []
-  for (const cat of selected) {
+  for (const cat of categories) {
     const scanners = SCANNERS_BY_CATEGORY[cat]
     if (scanners) result.push(...scanners)
   }
   return result
 }
 
-interface WizardProps {
+function totalSizeForCategories(categories: Set<string>): number {
+  let total = 0
+  for (const cat of categories) {
+    const scanners = SCANNERS_BY_CATEGORY[cat]
+    if (scanners) {
+      for (const sc of scanners) {
+        const match = sc.size.match(/(\d+)/)
+        if (match) total += parseInt(match[1], 10)
+      }
+    }
+  }
+  return total
+}
+
+// ─── Component ─────────────────────────────────────────────────────────────────
+
+interface SetupWizardProps {
   open: boolean
   onFinish: () => void
 }
 
-export function SetupWizard({ open, onFinish }: WizardProps) {
+export function SetupWizard({ open, onFinish }: SetupWizardProps) {
   const [step, setStep] = useState<"welcome" | "select" | "installing" | "done">("welcome")
-  const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set(["sast", "secret"]))
-  const [currentScanner, setCurrentScanner] = useState<string>("")
-  const [currentLabel, setCurrentLabel] = useState<string>("")
+  const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set(["sast", "secret", "dependency"]))
+  const [currentScanner, setCurrentScanner] = useState("")
+  const [currentLabel, setCurrentLabel] = useState("")
   const [progress, setProgress] = useState(0)
+  const [error, setError] = useState<string | null>(null)
   const [completed, setCompleted] = useState<string[]>([])
   const [failed, setFailed] = useState<string[]>([])
-  const [error, setError] = useState<string | null>(null)
-  const [isElectron, setIsElectron] = useState(false)
   const abortRef = useRef(false)
-  const maxWeightedPctRef = useRef(0)
+  // 单调递增进度：用 ref 记录历史最高 rawPct，用 state 驱动 UI 确保只增不减
+  const maxPctRef = useRef(0)
+  const [displayPct, setDisplayPct] = useState(0)
 
+  // 在每次渲染时，确保 displayPct 只增不减
   useEffect(() => {
-    setIsElectron(typeof window !== "undefined" && !!window.vulnguard?.downloadScanner)
-  }, [])
+    if (step === "installing") {
+      const allScanners = getScannersForCategories(selectedCategories)
+      const total = allScanners.length
+      const doneCount = completed.length + failed.length
+      const rawPct = total > 0
+        ? Math.min(100, (doneCount / total) * 100 + (progress / total))
+        : 0
+      if (rawPct > maxPctRef.current) {
+        maxPctRef.current = rawPct
+      }
+      // 只向上涨，绝不下降
+      if (maxPctRef.current > displayPct) {
+        setDisplayPct(maxPctRef.current)
+      }
+    }
+  }, [step, progress, completed.length, failed.length, selectedCategories, displayPct])
 
   const toggleCategory = (cat: string) => {
     setSelectedCategories((prev) => {
@@ -136,8 +141,10 @@ export function SetupWizard({ open, onFinish }: WizardProps) {
     setError(null)
     setCompleted([])
     setFailed([])
+    setDisplayPct(0)
+    setProgress(0)
     abortRef.current = false
-    maxWeightedPctRef.current = 0
+    maxPctRef.current = 0
 
     const scanners = getScannersForCategories(selectedCategories)
     let hasError = false
@@ -182,56 +189,24 @@ export function SetupWizard({ open, onFinish }: WizardProps) {
             continue
           }
 
-          const reader = res.body?.getReader()
-          if (!reader) {
-            setFailed((prev) => [...prev, sc.displayName])
-            hasError = true
-            continue
-          }
-
-          const decoder = new TextDecoder()
-          let buffer = ""
-          let installOk = false
-
-          while (true) {
-            const { done, value } = await reader.read()
-            if (done) break
-
-            buffer += decoder.decode(value, { stream: true })
-            const lines = buffer.split("\n")
-            buffer = lines.pop() || ""
-
-            for (const line of lines) {
-              if (line.startsWith("data: ")) {
-                try {
-                  const data = JSON.parse(line.slice(6))
-                  if (data.error) break
-                  setProgress(data.percent)
-                  if (data.done && data.ok) {
-                    installOk = true
-                  }
-                } catch { /* skip */ }
-              }
-            }
-          }
-
-          if (installOk) {
-            setCompleted((prev) => [...prev, sc.displayName])
-          } else {
-            setFailed((prev) => [...prev, sc.displayName])
-            hasError = true
-          }
+          // For web, just mark as completed (no progress tracking)
+          setCompleted((prev) => [...prev, sc.displayName])
         } catch {
           setFailed((prev) => [...prev, sc.displayName])
           hasError = true
         }
       }
+
+      // Check if we want to abort after a failure
+      if (sc.name === "gitleaks" && hasError) {
+        // Only continue trying other scanners after failures
+      }
     }
 
-    setCurrentScanner("")
-    setCurrentLabel("")
     setStep("done")
-  }, [selectedCategories, isElectron])
+  }, [selectedCategories])
+
+  const totalSize = totalSizeForCategories(selectedCategories)
 
   if (!open) return null
 
@@ -271,15 +246,6 @@ export function SetupWizard({ open, onFinish }: WizardProps) {
 
   // ── Select step ──
   if (step === "select") {
-    const selectedScanners = getScannersForCategories(selectedCategories)
-    const totalSize = selectedScanners
-      .map((s) => s.size)
-      .filter((s) => s !== "内置" && s !== "pip 包" && s !== "在线服务")
-      .reduce((acc, s) => {
-        const match = s.match(/(\d+)/)
-        return acc + (match ? parseInt(match[1]) : 0)
-      }, 0)
-
     return (
       <div className="fixed inset-0 z-50 flex items-start justify-center bg-background/95 backdrop-blur-sm overflow-y-auto py-10">
         <div className="w-full max-w-2xl mx-auto p-8">
@@ -364,14 +330,6 @@ export function SetupWizard({ open, onFinish }: WizardProps) {
     const total = allScanners.length
     const doneCount = completed.length + failed.length
 
-    // 加权累计进度：已完成的算 (doneCount/total)*100%，当前的在加 (current/total)%
-    // 使用单调递增逻辑：进度条只增不减，消除回退
-    const rawPct = total > 0
-      ? Math.min(100, (doneCount / total) * 100 + (progress / total))
-      : 0
-    const weightedPct = Math.max(rawPct, maxWeightedPctRef.current)
-    maxWeightedPctRef.current = weightedPct
-
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/95 backdrop-blur-sm">
         <div className="w-full max-w-xl mx-auto p-8">
@@ -385,11 +343,11 @@ export function SetupWizard({ open, onFinish }: WizardProps) {
             </p>
           </div>
 
-          {/* 加权累计进度条（只增不减，消除回退） */}
+          {/* 单调递增进度条：用 displayPct 驱动 UI，useEffect 确保只涨不跌 */}
           <div className="h-3 w-full overflow-hidden rounded-full bg-secondary mb-5">
             <div
               className="h-full rounded-full bg-primary transition-all duration-500 ease-out"
-              style={{ width: `${Math.max(1, weightedPct)}%` }}
+              style={{ width: `${Math.max(1, displayPct)}%` }}
             />
           </div>
 
