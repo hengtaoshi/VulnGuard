@@ -375,29 +375,13 @@ export function SetupWizard({ open, onFinish }: WizardProps) {
             </p>
           </div>
 
-          {/* Overall progress */}
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary mb-4">
+          {/* 加权累计进度条（只增不减，消除回退） */}
+          <div className="h-2 w-full overflow-hidden rounded-full bg-secondary mb-4">
             <div
-              className="h-full rounded-full bg-primary transition-all duration-500"
-              style={{ width: `${total > 0 ? (doneCount / total) * 100 : 0}%` }}
+              className="h-full rounded-full bg-primary transition-all duration-500 ease-out"
+              style={{ width: `${Math.max(1, weightedPct)}%` }}
             />
           </div>
-
-          {/* Current scanner progress */}
-          {currentScanner && (
-            <div className="space-y-2 mb-4">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">{currentLabel}</span>
-                <span className="text-muted-foreground">{progress}%</span>
-              </div>
-              <div className="h-1 w-full overflow-hidden rounded-full bg-secondary">
-                <div
-                  className="h-full rounded-full bg-primary transition-all duration-300"
-                  style={{ width: `${Math.max(1, progress)}%` }}
-                />
-              </div>
-            </div>
-          )}
 
           {error && (
             <div className="flex items-center gap-2 rounded-lg bg-destructive/10 p-2 text-xs text-destructive mb-3">

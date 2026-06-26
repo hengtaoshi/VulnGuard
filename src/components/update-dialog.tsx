@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useRef } from "react"
 import { Download, Loader2, CheckCircle2, X, AlertTriangle } from "lucide-react"
 
 interface UpdateInfo {
@@ -22,12 +22,16 @@ export function UpdateDialog({ open, onClose, info, error, onRetry }: UpdateDial
   const [done, setDone] = useState(false)
   const [dlError, setDlError] = useState<string | null>(null)
 
+  // 用 ref 记录历史最大进度，防止 electron-updater 的 progress.percent 因重定向/断点续传回退
+  const maxProgressRef = useRef(0)
+
   useEffect(() => {
     if (!open) {
       setDownloading(false)
       setProgress(0)
       setDone(false)
       setDlError(null)
+      maxProgressRef.current = 0
     }
   }, [open])
 
@@ -36,9 +40,15 @@ export function UpdateDialog({ open, onClose, info, error, onRetry }: UpdateDial
     if (!vg || !open) return
 
     const unsubProgress = vg.onUpdateProgress((p) => {
-      setProgress((prev) => Math.max(prev, p.percent))
+      // 只进不退：用 ref 确保历史的最高值不被覆盖
+      if (p.percent > maxProgressRef.current) {
+        maxProgressRef.current = p.percent
+        setProgress(p.percent)
+      }
     })
     const unsubDone = vg.onUpdateDownloaded(() => {
+      maxProgressRef.current = 100
+      setProgress(100)
       setDone(true)
       setDownloading(false)
     })

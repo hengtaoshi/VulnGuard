@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Check, Loader2, FolderOpen, AlertCircle, Brain, Cpu, Upload, File, X } from "lucide-react"
+import { Check, Loader2, FolderOpen, AlertCircle, Brain, Cpu, Upload, File, X, Download } from "lucide-react"
 import { useI18n } from "@/lib/i18n/context"
+import { SetupWizard } from "@/components/scanner/setup-wizard"
 
 type ScannerEngine = "ai" | "all"
 type PageState = "idle" | "uploading" | "scanning" | "error"
@@ -19,6 +20,8 @@ export default function NewScanPage() {
   const [error, setError] = useState("")
   const [engine, setEngine] = useState<ScannerEngine>("ai")
   const [settingsLoaded, setSettingsLoaded] = useState(false)
+  const [showWizard, setShowWizard] = useState(false)
+  const [wizardChecked, setWizardChecked] = useState(false)
 
   useEffect(() => {
     fetch("/api/settings")
@@ -31,6 +34,21 @@ export default function NewScanPage() {
       .catch(() => {})
       .finally(() => setSettingsLoaded(true))
   }, [])
+
+  // 页面加载时检查扫描器是否可用，不可用则弹出安装引导
+  useEffect(() => {
+    if (wizardChecked) return
+    fetch("/api/scanners")
+      .then(r => r.json())
+      .then((data: { available: boolean }[]) => {
+        const anyAvailable = data.some(s => s.available)
+        if (!anyAvailable) {
+          setShowWizard(true)
+        }
+        setWizardChecked(true)
+      })
+      .catch(() => setWizardChecked(true))
+  }, [wizardChecked])
   const [dragging, setDragging] = useState(false)
   const [uploadProgress, setUploadProgress] = useState("")
   const [uploadedInfo, setUploadedInfo] = useState<{ path: string; displayPath?: string; fileCount: number } | null>(null)
@@ -388,6 +406,12 @@ export default function NewScanPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* 扫描器安装向导 — 首次使用或无扫描器时自动弹出 */}
+      <SetupWizard
+        open={showWizard}
+        onFinish={() => setShowWizard(false)}
+      />
     </div>
   )
 }
