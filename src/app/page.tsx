@@ -41,7 +41,6 @@ export default function Dashboard() {
   const { data: scans, isLoading: scansLoading } = useScans()
 
   const [showWizard, setShowWizard] = useState(false)
-  const [wizardChecked, setWizardChecked] = useState(false)
 
   // ─── Auto-update detection ──────────────────────────────────────
   const [updateInfo, setUpdateInfo] = useState<{ version: string; currentVersion: string } | null>(null)
@@ -82,20 +81,18 @@ export default function Dashboard() {
     return () => unsub()
   }, [])
 
-  // 首次启动检测：如果没有任何扫描器可用，自动弹出安装向导
+  // 首次启动检测：localStorage 标记未设置 → 弹出安装向导
+  // 适用于桌面版首次安装和 Web 版首次访问
   useEffect(() => {
-    if (wizardChecked) return
-    fetch("/api/scanners")
-      .then(r => r.json())
-      .then((data: { available: boolean }[]) => {
-        const anyAvailable = data.some(s => s.available)
-        if (!anyAvailable) {
-          setShowWizard(true)
-        }
-        setWizardChecked(true)
-      })
-      .catch(() => setWizardChecked(true))
-  }, [wizardChecked])
+    try {
+      const onboarded = localStorage.getItem("vulnguard-onboarded")
+      if (onboarded !== "true") {
+        setShowWizard(true)
+      }
+    } catch {
+      // localStorage 不可用时（SSR），不回退到旧逻辑
+    }
+  }, [])
 
   const typeLabels: Record<string, string> = {
     source: t("dashboard.typeSource"),
@@ -255,11 +252,12 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
-      {/* 首次启动安装向导 */}
+      {/* 首次启动安装向导 — localStorage 标记未设置时弹出 */}
       <SetupWizard
         open={showWizard}
         onFinish={() => {
           setShowWizard(false)
+          try { localStorage.setItem("vulnguard-onboarded", "true") } catch {}
         }}
       />
 
