@@ -21,8 +21,9 @@ files:
 extraResources:
   - from: ".next/standalone"
     to: "app.asar.unpacked/.next/standalone"
-    filter:
-      - "**/*"
+
+asarUnpack:
+  - ".next/standalone/node_modules/**"
 
 asar: true
 

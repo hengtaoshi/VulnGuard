@@ -11,7 +11,7 @@
  */
 
 const { execSync } = require("child_process")
-const { existsSync, rmSync } = require("fs")
+const { existsSync, rmSync, cpSync } = require("fs")
 const { resolve } = require("path")
 
 const ROOT = resolve(__dirname, "..")
@@ -44,16 +44,16 @@ function main() {
   console.log(`  ${COLORS.green}  VulnGuard Desktop Builder${COLORS.reset}`)
   console.log(`  ${COLORS.cyan}════════════════════════════════════════════${COLORS.reset}\n`)
 
-  // ── [1/5] Clean previous builds ──────────────────────────────────────────
-  log("[1/5] Cleaning previous builds...")
+  // ── [1/6] Clean previous builds ──────────────────────────────────────────
+  log("[1/6] Cleaning previous builds...")
   for (const dir of [".next", RELEASE_DIR]) {
     if (existsSync(dir)) {
       rmSync(dir, { recursive: true, force: true })
     }
   }
 
-  // ── [2/4] Build Next.js standalone ───────────────────────────────────────
-  log("[2/5] Building Next.js (standalone)...")
+  // ── [2/6] Build Next.js standalone ───────────────────────────────────────
+  log("[2/6] Building Next.js (standalone)...")
   run("npm run build")
 
   // Verify standalone output
@@ -64,15 +64,25 @@ function main() {
   }
   log("Next.js standalone build complete")
 
-  // ── [3/5] Remove tools/ from standalone (avoids asar ENOTEMPTY on nested codeql dir) ──
-  log("[3/5] Cleaning standalone artifacts...")
+  // ── [3/6] Remove tools/ from standalone (avoids asar ENOTEMPTY on nested codeql dir) ──
+  log("[3/6] Cleaning standalone artifacts...")
   const toolsDir = resolve(ROOT, ".next", "standalone", "tools")
   if (existsSync(toolsDir)) {
     rmSync(toolsDir, { recursive: true, force: true })
   }
 
-  // ── [4/5] Copy static assets ─────────────────────────────────────────────
-  log("[4/5] Preparing static assets...")
+  // ── [4/6] Ensure standalone node_modules exists ─────────────────────────
+  const standaloneNodeModules = resolve(ROOT, ".next", "standalone", "node_modules")
+  if (!existsSync(resolve(standaloneNodeModules, "next"))) {
+    log("next module missing in standalone output — copying from project root")
+    const nextSrc = resolve(ROOT, "node_modules", "next")
+    if (existsSync(nextSrc)) {
+      cpSync(nextSrc, resolve(standaloneNodeModules, "next"), { recursive: true })
+    }
+  }
+
+  // ── [5/6] Copy static assets ─────────────────────────────────────────────
+  log("[5/6] Preparing static assets...")
   const { cpSync } = require("fs")
 
   // Copy .next/static to standalone
@@ -102,8 +112,8 @@ function main() {
 
   log("Static assets prepared")
 
-  // ── [5/5] Package with Electron Builder ────────────────────────────────────
-  log("[5/5] Packaging desktop application...")
+  // ── [6/6] Package with Electron Builder ────────────────────────────────────
+  log("[6/6] Packaging desktop application...")
 
   const buildCmd = target
     ? `npx electron-builder ${target} --config electron-builder.yml`
