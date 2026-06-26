@@ -40,6 +40,23 @@ jobs:
           node-version: '22'
           cache: 'npm'
 
+      - name: Cache Next.js build
+        uses: actions/cache@v4
+        with:
+          path: .next/cache
+          key: next-build-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**', 'public/**') }}
+          restore-keys: |
+            next-build-${{ hashFiles('package-lock.json') }}-
+            next-build-
+
+      - name: Cache Electron binary
+        uses: actions/cache@v4
+        with:
+          path: electron-bin
+          key: electron-bin-${{ runner.os }}-${{ hashFiles('node_modules/electron/package.json') }}
+          restore-keys: |
+            electron-bin-${{ runner.os }}-
+
       - name: Install dependencies
         run: npm ci
 
@@ -48,13 +65,17 @@ jobs:
       - name: Setup electron-bin
         shell: bash
         run: |
-          echo "Ensuring electron binary is downloaded..."
-          node node_modules/electron/install.js
-          echo ""
-          echo "Copying electron from node_modules/electron/dist/ to electron-bin/"
-          mkdir -p electron-bin
-          cp -r node_modules/electron/dist/* electron-bin/
-          echo "✓ electron-bin ready ($(ls electron-bin/ | wc -l) files)"
+          if [ -d "electron-bin" ] && [ -f "electron-bin/electron.exe" ]; then
+            echo "✓ electron-bin cache hit ($(ls electron-bin/ | wc -l) files)"
+          else
+            echo "Ensuring electron binary is downloaded..."
+            node node_modules/electron/install.js
+            echo ""
+            echo "Copying electron from node_modules/electron/dist/ to electron-bin/"
+            mkdir -p electron-bin
+            cp -r node_modules/electron/dist/* electron-bin/
+            echo "✓ electron-bin ready ($(ls electron-bin/ | wc -l) files)"
+          fi
 
       # build-electron.js 执行完整流程:
       #   1/5 清理 .next/ 和 release/
