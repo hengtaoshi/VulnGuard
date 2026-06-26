@@ -6,7 +6,7 @@
  */
 const https = require("https")
 const http = require("http")
-const { createWriteStream, existsSync, mkdirSync, unlinkSync, readFileSync } = require("fs")
+const { createWriteStream, existsSync, mkdirSync, unlinkSync, readFileSync, openSync, readSync, closeSync, statSync } = require("fs")
 const { join, dirname } = require("path")
 const { execSync } = require("child_process")
 const { platform } = require("os")
@@ -294,10 +294,22 @@ function downloadFile(url, dest, reporter) {
 function extractZip(zipPath, destDir, filter) {
   return new Promise((resolve, reject) => {
     try {
+      // 安全检测：列出 ZIP 条目，检查路径穿越攻击
       if (IS_WIN) {
-        const cmd = `tar -xf "${zipPath}" -C "${destDir}" 2>nul`
-        execSync(cmd, { stdio: "pipe", timeout: 60000 })
+        const entries = execSync(`tar -tf "${zipPath}"`, { stdio: "pipe", timeout: 30000 }).toString().split("\n")
+        for (const entry of entries) {
+          const trimmed = entry.trim()
+          if (trimmed.includes("..") || trimmed.startsWith("/") || trimmed.startsWith("\\")) {
+            throw new Error(`Path traversal detected in archive: ${trimmed}`)
+          }
+        }
+        execSync(`tar -xf "${zipPath}" -C "${destDir}" 2>nul`, { stdio: "pipe", timeout: 60000 })
       } else {
+        // Linux: unzip -l 检查，并用 -x 排除危险路径
+        const listing = execSync(`unzip -l "${zipPath}" 2>/dev/null`, { stdio: "pipe", timeout: 30000 }).toString()
+        if (listing.includes("..")) {
+          throw new Error("Path traversal detected in archive")
+        }
         execSync(`unzip -o "${zipPath}" -d "${destDir}" 2>/dev/null`, { stdio: "pipe", timeout: 60000 })
       }
       try { unlinkSync(zipPath) } catch {}
@@ -307,6 +319,30 @@ function extractZip(zipPath, destDir, filter) {
       reject(err)
     }
   })
+}
+
+/**
+ * 验证下载的二进制文件是有效的 PE 可执行文件（Windows）
+ */
+function verifyBinary(filePath) {
+  try {
+    if (!existsSync(filePath)) return false
+    const size = statSync(filePath).size
+    if (size < 1000) return false // 太小的文件肯定不对
+    // Windows: 检查 MZ 头部
+    if (IS_WIN) {
+      const buf = Buffer.alloc(2)
+      const fd = openSync(filePath, 'r')
+      readSync(fd, buf, 0, 2, 0)
+      closeSync(fd)
+      if (buf[0] !== 0x4D || buf[1] !== 0x5A) {
+        throw new Error(`Invalid PE executable: missing MZ header`)
+      }
+    }
+    return true
+  } catch {
+    return false
+  }
 }
 
 // --- Scanner installers ----------------------------------------------------
@@ -327,6 +363,11 @@ async function installBinaryScanner(def, binDir, reporter) {
   renameSync(dest + ".download", dest)
   if (!IS_WIN) {
     execSync(`chmod +x "${dest}"`, { stdio: "pipe" })
+  }
+  // 验证下载的二进制是有效的可执行文件
+  if (!verifyBinary(dest)) {
+    try { unlinkSync(dest) } catch {}
+    return { ok: false, error: "下载的二进制文件无效或已损坏" }
   }
   return { ok: true }
 }

@@ -3,6 +3,16 @@ import { getSettings, updateSettings, DEFAULT_SETTINGS, maskApiKey, isMaskedKey 
 import type { AppSettings } from "@/lib/settings-store"
 import { requireAuth } from "@/lib/api/auth"
 
+/** URL 格式校验 + 协议白名单 */
+function isValidUrl(url: string, allowedProtocols = ["http:", "https:"]): boolean {
+  try {
+    const parsed = new URL(url)
+    return allowedProtocols.includes(parsed.protocol) && parsed.hostname.length > 0
+  } catch {
+    return false
+  }
+}
+
 function validateSettings(body: Record<string, unknown>): Partial<AppSettings> {
   const valid: Partial<AppSettings> = {}
   const d = DEFAULT_SETTINGS
@@ -16,20 +26,40 @@ function validateSettings(body: Record<string, unknown>): Partial<AppSettings> {
 
   // API Key: 如果是掩码值则保留原值，否则更新
   if (typeof body.deepseekApiKey === "string") {
-    if (isMaskedKey(body.deepseekApiKey)) {
+    if (body.deepseekApiKey.startsWith("__MASKED__")) {
       // 前端发回掩码值 → 保持现有 key 不变（下面从 current 补全）
     } else {
       valid.deepseekApiKey = body.deepseekApiKey
     }
   }
 
-  if (typeof body.deepseekBaseUrl === "string") valid.deepseekBaseUrl = body.deepseekBaseUrl
+  if (typeof body.deepseekBaseUrl === "string") {
+    if (body.deepseekBaseUrl && !isValidUrl(body.deepseekBaseUrl)) {
+      throw new Error("无效的 DeepSeek Base URL")
+    }
+    valid.deepseekBaseUrl = body.deepseekBaseUrl
+  }
   if (typeof body.deepseekModel === "string") valid.deepseekModel = body.deepseekModel
   if (typeof body.proxyEnabled === "boolean") valid.proxyEnabled = body.proxyEnabled
-  if (typeof body.httpProxy === "string") valid.httpProxy = body.httpProxy
-  if (typeof body.httpsProxy === "string") valid.httpsProxy = body.httpsProxy
+  if (typeof body.httpProxy === "string") {
+    if (body.httpProxy && !isValidUrl(body.httpProxy)) {
+      throw new Error("无效的 HTTP 代理 URL")
+    }
+    valid.httpProxy = body.httpProxy
+  }
+  if (typeof body.httpsProxy === "string") {
+    if (body.httpsProxy && !isValidUrl(body.httpsProxy)) {
+      throw new Error("无效的 HTTPS 代理 URL")
+    }
+    valid.httpsProxy = body.httpsProxy
+  }
   if (typeof body.webhookEnabled === "boolean") valid.webhookEnabled = body.webhookEnabled
-  if (typeof body.webhookUrl === "string") valid.webhookUrl = body.webhookUrl
+  if (typeof body.webhookUrl === "string") {
+    if (body.webhookUrl && !isValidUrl(body.webhookUrl)) {
+      throw new Error("无效的 Webhook URL")
+    }
+    valid.webhookUrl = body.webhookUrl
+  }
   if (Array.isArray(body.disabledScanners)) valid.disabledScanners = body.disabledScanners.filter(s => typeof s === "string")
 
   return valid
