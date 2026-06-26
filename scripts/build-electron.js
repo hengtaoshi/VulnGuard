@@ -44,8 +44,8 @@ function main() {
   console.log(`  ${COLORS.green}  VulnGuard Desktop Builder${COLORS.reset}`)
   console.log(`  ${COLORS.cyan}════════════════════════════════════════════${COLORS.reset}\n`)
 
-  // ── [1/4] Clean previous builds ──────────────────────────────────────────
-  log("[1/4] Cleaning previous builds...")
+  // ── [1/5] Clean previous builds ──────────────────────────────────────────
+  log("[1/5] Cleaning previous builds...")
   for (const dir of [".next", RELEASE_DIR]) {
     if (existsSync(dir)) {
       rmSync(dir, { recursive: true, force: true })
@@ -53,7 +53,7 @@ function main() {
   }
 
   // ── [2/4] Build Next.js standalone ───────────────────────────────────────
-  log("[2/4] Building Next.js (standalone)...")
+  log("[2/5] Building Next.js (standalone)...")
   run("npm run build")
 
   // Verify standalone output
@@ -64,8 +64,15 @@ function main() {
   }
   log("Next.js standalone build complete")
 
-  // ── [3/4] Copy static assets ─────────────────────────────────────────────
-  log("[3/4] Preparing static assets...")
+  // ── [3/5] Remove tools/ from standalone (avoids asar ENOTEMPTY on nested codeql dir) ──
+  log("[3/5] Cleaning standalone artifacts...")
+  const toolsDir = resolve(ROOT, ".next", "standalone", "tools")
+  if (existsSync(toolsDir)) {
+    rmSync(toolsDir, { recursive: true, force: true })
+  }
+
+  // ── [4/5] Copy static assets ─────────────────────────────────────────────
+  log("[4/5] Preparing static assets...")
   const { cpSync } = require("fs")
 
   // Copy .next/static to standalone
@@ -95,8 +102,8 @@ function main() {
 
   log("Static assets prepared")
 
-  // ── [4/4] Package with Electron Builder ──────────────────────────────────
-  log("[4/4] Packaging desktop application...")
+  // ── [5/5] Package with Electron Builder ────────────────────────────────────
+  log("[5/5] Packaging desktop application...")
 
   const buildCmd = target
     ? `npx electron-builder ${target} --config electron-builder.yml`
