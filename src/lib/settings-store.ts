@@ -85,6 +85,22 @@ export function getSettings(): AppSettings {
   }
 }
 
+/**
+ * 掩码 API Key，只显示前4位和后4位
+ * "sk-abc123xyz789" → "sk-a****789"
+ */
+export function maskApiKey(key: string): string {
+  if (!key || key.length < 10) return key
+  return key.slice(0, 4) + "****" + key.slice(-4)
+}
+
+/**
+ * 判断值是否为已被掩码的 key（4明文 + 4星号 + 4明文）
+ */
+export function isMaskedKey(key: string): boolean {
+  return /^.{4}\*{4}.{4}$/.test(key)
+}
+
 export function updateSettings(partial: Partial<AppSettings>): AppSettings {
   ensureDir()
   const current = getSettings()

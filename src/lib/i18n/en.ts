@@ -204,6 +204,12 @@ export const en: TranslationDict = {
     saved: "Settings saved",
     saveError: "Failed to save",
     loadError: "Failed to load settings",
+    scanConfig: "Scan Parameters",
+    scanConfigDesc: "Configure scan runtime behavior",
+    checkUpdates: "Check for Updates",
+    checkUpdatesDesc: "Check for latest version on GitHub",
+    batchInstall: "Batch Install",
+    install: "Install",
     // Scanner management
     scannerManagement: "Scanner Management",
     scannerManagementDesc: "View scanner status and enable/disable",

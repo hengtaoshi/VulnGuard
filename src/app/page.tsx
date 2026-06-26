@@ -3,12 +3,13 @@
 import dynamic from "next/dynamic"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Shield, AlertTriangle, CheckCircle, Activity, Loader2 } from "lucide-react"
+import { Shield, AlertTriangle, CheckCircle, Activity, Loader2, Download, X } from "lucide-react"
 import { useI18n } from "@/lib/i18n/context"
 import { useStats, useScans } from "@/lib/api/hooks"
 import type { ScanSummary } from "@/lib/api/types"
 import { SetupWizard } from "@/components/scanner/setup-wizard"
 import { useState, useEffect } from "react"
+import { UpdateDialog } from "@/components/update-dialog"
 
 const VulnerabilityChart = dynamic(
   () => import("@/components/dashboard/vulnerability-chart").then(m => m.VulnerabilityChart),
@@ -41,6 +42,45 @@ export default function Dashboard() {
 
   const [showWizard, setShowWizard] = useState(false)
   const [wizardChecked, setWizardChecked] = useState(false)
+
+  // ─── Auto-update detection ──────────────────────────────────────
+  const [updateInfo, setUpdateInfo] = useState<{ version: string; currentVersion: string } | null>(null)
+  const [updateDialogOpen, setUpdateDialogOpen] = useState(false)
+  const [updateDismissed, setUpdateDismissed] = useState(false)
+
+  useEffect(() => {
+    const vg = window.vulnguard
+
+    // Electron mode: already covered by UpdateBanner via IPC — skip GitHub API
+    if (vg) return
+
+    // Web mode: check GitHub Releases API directly
+    let cancelled = false
+
+    fetch("https://api.github.com/repos/hengtaoshi/VulnGuard/releases/latest")
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (cancelled || !data?.tag_name) return
+        const latest = data.tag_name.replace(/^v/i, "")
+        // In web mode we can't reliably get the local version, just show the update card
+        if (latest) {
+          setUpdateInfo({ version: latest, currentVersion: "?" })
+        }
+      })
+      .catch(() => { /* silently ignore — not critical */ })
+
+    return () => { cancelled = true }
+  }, [])
+
+  // Electron mode: also listen for update-available in case the banner was dismissed
+  useEffect(() => {
+    const vg = window.vulnguard
+    if (!vg) return
+    const unsub = vg.onUpdateAvailable((info) => {
+      setUpdateInfo({ version: info.version, currentVersion: vg.version || "?" })
+    })
+    return () => unsub()
+  }, [])
 
   // 首次启动检测：如果没有任何扫描器可用，自动弹出安装向导
   useEffect(() => {
@@ -99,6 +139,43 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+      {/* Update Notification Card — shown when an update is available and not dismissed */}
+      {updateInfo && !updateDismissed && (
+        <Card className="border-primary/20 bg-primary/5">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="rounded-full bg-primary/10 p-2 shrink-0">
+                  <Download className="h-4 w-4 text-primary" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">
+                    {t("app.name")} v{updateInfo.version} 可用
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    当前版本：v{updateInfo.currentVersion} — 点击查看更新详情
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => setUpdateDialogOpen(true)}
+                  className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+                >
+                  查看更新
+                </button>
+                <button
+                  onClick={() => setUpdateDismissed(true)}
+                  className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Stats Grid */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {statCards.map(s => (
@@ -184,6 +261,14 @@ export default function Dashboard() {
         onFinish={() => {
           setShowWizard(false)
         }}
+      />
+
+      {/* 更新对话框 */}
+      <UpdateDialog
+        open={updateDialogOpen}
+        onClose={() => setUpdateDialogOpen(false)}
+        info={updateInfo}
+        onRetry={() => {}}
       />
     </div>
   )

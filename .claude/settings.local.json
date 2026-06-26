@@ -167,7 +167,16 @@
       "Bash(HTTP_PROXY=http://127.0.0.1:7897 HTTPS_PROXY=http://127.0.0.1:7897 npx electron-builder build --win --config electron-builder.yml -c.directories.output=dist-electron)",
       "Bash(npx electron-builder *)",
       "Bash(mkdir -p D:/DEMO/VulnGuard/electron-bin)",
-      "Bash(unzip -o \"C:/Users/Administrator/AppData/Local/electron/Cache/59ea157472003d1145e536a90686ae143ddd5bd99ef5b2bda2683be25aabe516/electron-v42.5.0-win32-x64.zip\")"
+      "Bash(unzip -o \"C:/Users/Administrator/AppData/Local/electron/Cache/59ea157472003d1145e536a90686ae143ddd5bd99ef5b2bda2683be25aabe516/electron-v42.5.0-win32-x64.zip\")",
+      "Bash(ssh *)",
+      "Bash(unzip *)",
+      "Read(//tmp/**)",
+      "Bash(npx --yes sharp-cli --help)",
+      "Bash(HTTPS_PROXY=http://127.0.0.1:7897 HTTP_PROXY=http://127.0.0.1:7897 git push origin master)",
+      "Bash(HTTPS_PROXY=http://127.0.0.1:7897 HTTP_PROXY=http://127.0.0.1:7897 git push origin --delete v0.4.0、)",
+      "Bash(HTTPS_PROXY=http://127.0.0.1:7897 git push *)",
+      "Bash(node -p \"require\\('./package.json'\\).version\")",
+      "Bash(npm version *)"
     ]
   }
 }

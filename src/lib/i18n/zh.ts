@@ -202,6 +202,12 @@ export const zh = {
     saved: "设置已保存",
     saveError: "保存失败",
     loadError: "加载设置失败",
+    scanConfig: "扫描参数",
+    scanConfigDesc: "设置扫描运行时的各项参数",
+    checkUpdates: "检查更新",
+    checkUpdatesDesc: "检查 GitHub 上的最新版本",
+    batchInstall: "批量安装",
+    install: "安装",
     // 扫描器管理
     scannerManagement: "扫描器管理",
     scannerManagementDesc: "查看各扫描器状态并启用/禁用",
