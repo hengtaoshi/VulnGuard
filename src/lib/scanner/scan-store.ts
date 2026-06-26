@@ -38,9 +38,14 @@ export interface ScanSession {
   createdAt: string
 }
 
-const STORAGE_DIR = process.env.NODE_ENV === "production"
-  ? join(process.cwd(), "data", "scans")
-  : join(process.cwd(), ".scans")
+// Electron 打包后 process.cwd() 可能指向只读的安装目录（如 Program Files），
+// 优先使用 VULNGUARD_DATA_DIR 环境变量（由 Electron main.js 传入的用户数据目录）
+const DATA_DIR_ENV = process.env.VULNGUARD_DATA_DIR || process.env.DATA_DIR
+const STORAGE_DIR = DATA_DIR_ENV
+  ? join(DATA_DIR_ENV, "scans")
+  : process.env.NODE_ENV === "production"
+    ? join(process.cwd(), "data", "scans")
+    : join(process.cwd(), ".scans")
 
 function ensureDir() {
   if (!existsSync(STORAGE_DIR)) {

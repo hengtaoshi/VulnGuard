@@ -7,7 +7,10 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs"
 import { join } from "path"
 
-const SETTINGS_DIR = join(process.cwd(), ".scans")
+const DATA_DIR_ENV = process.env.VULNGUARD_DATA_DIR || process.env.DATA_DIR
+const SETTINGS_DIR = DATA_DIR_ENV
+  ? join(DATA_DIR_ENV)
+  : join(process.cwd(), ".scans")
 const SETTINGS_FILE = join(SETTINGS_DIR, "settings.json")
 
 export interface AppSettings {

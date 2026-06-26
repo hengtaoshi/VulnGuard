@@ -1,0 +1,84 @@
+# VulnGuard Build & Release
+#
+# 推送 v* 标签时自动构建 Electron 桌面应用并发布到 GitHub Releases。
+# 也可通过 workflow_dispatch 手动触发构建测试。
+#
+# 用法:
+#   git tag v0.3.2
+#   git push origin v0.3.2
+#
+# 流程:
+#   1. 检出代码
+#   2. 安装 Node.js 依赖 (npm ci)
+#   3. 准备 electron-bin (从 node_modules 复制)
+#   4. build-electron.js 自动执行: 清理 → next build → 复制静态资源 → electron-builder 打包
+#   5. 上传到 GitHub Releases
+
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (Windows)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # electron-builder.yml 配了 electronDist: electron-bin
+      # 但这个目录不存在于 git 中，需要从 node_modules 复制
+      - name: Setup electron-bin
+        shell: bash
+        run: |
+          echo "Copying electron from node_modules/electron/dist/ to electron-bin/"
+          mkdir -p electron-bin
+          cp -r node_modules/electron/dist/* electron-bin/
+          echo "✓ electron-bin ready ($(ls electron-bin/ | wc -l) files)"
+
+      # build-electron.js 执行完整流程:
+      #   1/5 清理 .next/ 和 release/
+      #   2/5 next build (standalone)
+      #   3/5 清理 standalone 中的 tools/
+      #   4/5 复制静态资源到 standalone
+      #   5/5 electron-builder 打包 NSIS 安装包
+      - name: Build & Package
+        run: node scripts/build-electron.js --win
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: List release artifacts
+        shell: pwsh
+        run: |
+          Write-Host "=== Release artifacts ==="
+          if (Test-Path release/) {
+            Get-ChildItem -Path release/ | ForEach-Object {
+              Write-Host "  $($_.Name)  ($([math]::Round($_.Length / 1MB, 1)) MB)"
+            }
+          } else {
+            Write-Host "  (none - release/ directory not found)"
+          }
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true

@@ -14,10 +14,13 @@ const http = require("http")
 // ─── Constants ──────────────────────────────────────────────────────────────
 
 const IS_DEV = !app.isPackaged
-const PORT = process.env.VULNGUARD_PORT || 3000
 const DATA_DIR = path.join(app.getPath("userData"), "data")
 const TOOLS_DIR = path.join(app.getPath("userData"), "tools")
 const SCAN_ENGINE_DIR = path.join(TOOLS_DIR, "scan-engine")
+
+// Port to use — may be updated by port-fallback logic
+let ACTIVE_PORT = parseInt(process.env.VULNGUARD_PORT || "3000", 10)
+const PORT_FALLBACK_MAX = 3005 // try 3000-3005
 
 // ─── State ──────────────────────────────────────────────────────────────────
 
@@ -83,43 +86,101 @@ ipcMain.handle("open-file-dialog", async () => {
   return result.canceled ? null : result.filePaths
 })
 
+// ─── Log file for server diagnostics ────────────────────────────────────────
+
+const LOG_DIR = IS_DEV
+  ? path.join(process.cwd(), ".scans")
+  : path.join(app.getPath("userData"), "logs")
+
+function writeLog(level, msg) {
+  try {
+    if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true })
+    const logFile = path.join(LOG_DIR, "electron.log")
+    const line = `[${new Date().toISOString()}] [${level}] ${msg}\n`
+    fs.appendFileSync(logFile, line, "utf-8")
+  } catch { /* best effort */ }
+}
+
+// ─── Collect server stderr for error dialog ─────────────────────────────────
+
+let serverStderr = ""
+
 // ─── Find Next.js Server ────────────────────────────────────────────────────
 
 function findServerJs() {
-  const candidates = [
-    path.join(process.resourcesPath, "app.asar.unpacked", ".next", "standalone", "server.js"),
-    path.join(__dirname, "..", ".next", "standalone", "server.js"),
-    path.join(process.cwd(), ".next", "standalone", "server.js"),
-  ]
+  const candidates = IS_DEV
+    ? [
+        path.join(process.cwd(), ".next", "standalone", "server.js"),
+      ]
+    : [
+        path.join(process.resourcesPath, "app.asar.unpacked", ".next", "standalone", "server.js"),
+        path.join(path.dirname(process.execPath), "resources", "app.asar.unpacked", ".next", "standalone", "server.js"),
+        path.join(__dirname, "..", ".next", "standalone", "server.js"),
+        path.join(process.cwd(), ".next", "standalone", "server.js"),
+      ]
   for (const c of candidates) {
-    if (fs.existsSync(c)) return c
+    try {
+      if (fs.existsSync(c)) return c
+    } catch { /* skip invalid paths */ }
   }
   return null
 }
 
 // ─── Start Next.js Server ───────────────────────────────────────────────────
 
-function startNextServer() {
+function startNextServer(port) {
   return new Promise((resolve, reject) => {
     const serverJs = findServerJs()
     if (!serverJs) {
-      reject(new Error("Next.js standalone server.js not found. Run 'npm run build' first."))
+      reject(new Error(`Next.js standalone server.js not found.\n\nSearched paths:\n  ${findServerJs.toString().match(/candidates = \[([^\]]+)\]/s)?.[1]?.split(",").map(s => s.trim()).join("\n  ") || "(see log)"}`))
       return
     }
 
+    writeLog("info", `Found server.js at: ${serverJs} (port ${port})`)
+
+    // Build env: inherit process.env + override key vars
     const env = {
       ...process.env,
-      PORT: String(PORT),
+      PORT: String(port),
       NODE_ENV: "production",
       DATA_DIR: DATA_DIR,
       VULNGUARD_DATA_DIR: DATA_DIR,
     }
 
+    // Reset server stderr for each start attempt
+    serverStderr = ""
+
     // Set up .env.local if not exists
-    const envLocalPath = path.join(path.dirname(serverJs), ".env.local")
-    const envExamplePath = path.join(path.dirname(serverJs), ".env.example")
+    const serverDir = path.dirname(serverJs)
+    const envLocalPath = path.join(serverDir, ".env.local")
+    const envExamplePath = path.join(serverDir, ".env.example")
     if (!fs.existsSync(envLocalPath) && fs.existsSync(envExamplePath)) {
-      fs.copyFileSync(envExamplePath, envLocalPath)
+      try {
+        fs.copyFileSync(envExamplePath, envLocalPath)
+        writeLog("info", `Created .env.local from .env.example at ${serverDir}`)
+      } catch (e) {
+        writeLog("warn", `Failed to copy .env.example: ${e.message}`)
+      }
+    }
+
+    // Also load .env.local into env if present
+    const envLocal = envLocalPath
+    if (fs.existsSync(envLocal)) {
+      try {
+        const content = fs.readFileSync(envLocal, "utf-8")
+        for (const line of content.split("\n")) {
+          const trimmed = line.trim()
+          if (!trimmed || trimmed.startsWith("#")) continue
+          const eqIdx = trimmed.indexOf("=")
+          if (eqIdx < 1) continue
+          const key = trimmed.slice(0, eqIdx).trim()
+          const val = trimmed.slice(eqIdx + 1).trim().replace(/^["']|["']$/g, "")
+          if (key && !env[key]) env[key] = val
+        }
+        writeLog("info", "Loaded .env.local into server environment")
+      } catch (e) {
+        writeLog("warn", `Failed to load .env.local: ${e.message}`)
+      }
     }
 
     serverProcess = fork(serverJs, [], {
@@ -127,62 +188,112 @@ function startNextServer() {
       stdio: ["ignore", "pipe", "pipe", "ipc"],
     })
 
+    let resolved = false
+
     serverProcess.stdout.on("data", (data) => {
       const msg = data.toString()
-      console.log(`[next] ${msg.trim()}`)
-      if (msg.includes("started") || msg.includes("listening") || msg.includes("ready")) {
+      writeLog("info", `[next] ${msg.trim()}`)
+      if (!resolved && (msg.includes("started") || msg.includes("listening") || msg.includes("ready") || msg.includes("localhost"))) {
+        resolved = true
         serverReady = true
+        writeLog("info", "Server ready signal detected on stdout")
         resolve()
       }
     })
 
     serverProcess.stderr.on("data", (data) => {
       const msg = data.toString().trim()
-      if (msg) console.error(`[next] ${msg}`)
+      if (!msg) return
+      serverStderr += msg + "\n"
+      writeLog("error", `[next:stderr] ${msg}`)
     })
 
     serverProcess.on("error", (err) => {
-      console.error("[next] Server error:", err)
-      reject(err)
+      writeLog("error", `Server fork error: ${err.message}`)
+      if (!resolved) {
+        resolved = true
+        reject(new Error(`Failed to fork server process:\n${err.message}`))
+      }
     })
 
     serverProcess.on("exit", (code) => {
-      console.log(`[next] Server exited with code ${code}`)
-      serverReady = false
+      const signal = serverProcess?.killed ? " (killed)" : ""
+      writeLog("info", `Server process exited with code ${code}${signal}`)
       serverProcess = null
+      if (!resolved && code !== null && code !== 0) {
+        // Process crashed before we got a ready signal — reject early
+        resolved = true
+        const stderrSnippet = serverStderr
+          ? `\n\nServer stderr (last 500 chars):\n${serverStderr.slice(-500)}`
+          : ""
+        reject(new Error(`Server exited unexpectedly (code ${code}).${stderrSnippet}`))
+      }
     })
 
-    // Poll for server readiness (fork doesn't reliably signal)
+    // Poll for server readiness (fork doesn't reliably signal via stdout)
+    const POLL_INTERVAL = 800    // ms between checks
+    const MAX_ATTEMPTS = 90      // ~72 seconds total
     let attempts = 0
+
     const poll = setInterval(() => {
-      if (serverReady) {
+      if (resolved) {
         clearInterval(poll)
         return
       }
+
+      // If the process already exited, fail fast
+      if (!serverProcess && !serverReady) {
+        clearInterval(poll)
+        if (!resolved) {
+          resolved = true
+          const stderrSnippet = serverStderr
+            ? `\n\nServer stderr (last 500 chars):\n${serverStderr.slice(-500)}`
+            : ""
+          reject(new Error(`Server process exited during startup.${stderrSnippet}`))
+        }
+        return
+      }
+
       attempts++
-      if (attempts > 60) {
-        // 30 seconds timeout
+      if (attempts > MAX_ATTEMPTS) {
         clearInterval(poll)
-        // Check if the server is actually running despite no signal
-        checkServer()
-          .then((ok) => (ok ? resolve() : reject(new Error("Server startup timeout"))))
-          .catch(() => reject(new Error("Server startup timeout")))
+        checkServer(port).then((ok) => {
+          if (ok && !resolved) {
+            resolved = true
+            serverReady = true
+            resolve()
+          } else if (!resolved) {
+            resolved = true
+            const stderrSnippet = serverStderr
+              ? `\n\nServer stderr (last 800 chars):\n${serverStderr.slice(-800)}`
+              : ""
+            reject(new Error(
+              `Server did not start within ${Math.round((MAX_ATTEMPTS * POLL_INTERVAL) / 1000)} seconds.` +
+              `\nPort: ${port}` +
+              `${stderrSnippet}` +
+              `\n\nCheck logs: ${path.join(LOG_DIR, "electron.log")}`
+            ))
+          }
+        })
         return
       }
-      checkServer().then((ok) => {
-        if (ok) {
+
+      checkServer(port).then((ok) => {
+        if (ok && !resolved) {
+          resolved = true
           serverReady = true
           clearInterval(poll)
+          writeLog("info", "Server reachable via HTTP check on port " + port)
           resolve()
         }
       })
-    }, 500)
+    }, POLL_INTERVAL)
   })
 }
 
-function checkServer() {
+function checkServer(port) {
   return new Promise((resolve) => {
-    const req = http.get(`http://127.0.0.1:${PORT}`, (res) => {
+    const req = http.get(`http://127.0.0.1:${port || ACTIVE_PORT}`, (res) => {
       resolve(res.statusCode < 500)
     })
     req.on("error", () => resolve(false))
@@ -275,10 +386,10 @@ function createWindow() {
 
   // Load the app
   if (IS_DEV) {
-    mainWindow.loadURL(`http://localhost:${PORT}`)
+    mainWindow.loadURL(`http://localhost:${ACTIVE_PORT}`)
     mainWindow.webContents.openDevTools()
   } else {
-    mainWindow.loadURL(`http://127.0.0.1:${PORT}`)
+    mainWindow.loadURL(`http://127.0.0.1:${ACTIVE_PORT}`)
   }
 
   mainWindow.on("closed", () => {
@@ -307,14 +418,40 @@ app.whenReady().then(async () => {
       return
     }
   } else {
-    // Production: start the Next.js server
-    console.log("[electron] Starting Next.js server...")
-    try {
-      await startNextServer()
-      console.log("[electron] Next.js server is ready")
-    } catch (err) {
-      console.error("[electron] Failed to start server:", err.message)
-      dialog.showErrorBox("Startup Error", `Failed to start the web server:\n\n${err.message}`)
+    // Production: start the Next.js server with port fallback
+    let lastError = null
+    let started = false
+
+    for (let port = ACTIVE_PORT; port <= PORT_FALLBACK_MAX; port++) {
+      writeLog("info", `Attempting to start server on port ${port}...`)
+      try {
+        await startNextServer(port)
+        ACTIVE_PORT = port
+        started = true
+        writeLog("info", `Server started successfully on port ${port}`)
+        break
+      } catch (err) {
+        lastError = err
+        writeLog("warn", `Port ${port} failed: ${err.message}`)
+        // Kill any lingering process from this attempt
+        if (serverProcess) {
+          serverProcess.kill("SIGKILL")
+          serverProcess = null
+        }
+        serverReady = false
+        serverStderr = ""
+      }
+    }
+
+    if (!started) {
+      const msg = lastError ? lastError.message : "unknown error"
+      writeLog("error", `All ports (${ACTIVE_PORT}-${PORT_FALLBACK_MAX}) failed. Last error: ${msg}`)
+      dialog.showErrorBox(
+        "Startup Error",
+        `Failed to start the web server on ports ${ACTIVE_PORT}-${PORT_FALLBACK_MAX}.\n\n` +
+        `Last error:\n${msg}\n\n` +
+        `Logs: ${path.join(LOG_DIR, "electron.log")}`
+      )
       app.quit()
       return
     }
