@@ -32,7 +32,7 @@ function log(msg, ok = true) {
 }
 
 function run(cmd, opts = {}) {
-  execSync(cmd, { cwd: ROOT, stdio: "pipe", timeout: 300000, ...opts })
+  execSync(cmd, { cwd: ROOT, stdio: "pipe", timeout: 1200000, ...opts })
 }
 
 // ─── Main ───────────────────────────────────────────────────────────────────
