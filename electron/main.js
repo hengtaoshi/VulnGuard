@@ -394,13 +394,47 @@ async function waitForServer(maxRetries = 60) {
 // ─── Auto-Updater ──────────────────────────────────────────────────
 
 /**
+ * 检测 Windows 系统代理设置（注册表），在没有手动配置时自动使用。
+ * 对应 Clash / V2Ray / 系统代理等场景。
+ */
+function detectSystemProxy() {
+  if (process.platform !== "win32") return
+  // 如果环境变量已经由 settings.json 设置了，不覆盖
+  if (process.env.HTTPS_PROXY || process.env.https_proxy) return
+  try {
+    const { execSync } = require("child_process")
+    const registryQuery = 'reg query "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings" /v ProxyEnable /t REG_DWORD 2>nul'
+    const enabled = execSync(registryQuery, { stdio: "pipe", timeout: 3000 }).toString().trim()
+    if (!enabled.includes("0x1")) return
+
+    const serverQuery = 'reg query "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings" /v ProxyServer /t REG_SZ 2>nul'
+    const server = execSync(serverQuery, { stdio: "pipe", timeout: 3000 }).toString().trim()
+    const match = server.match(/ProxyServer\s+REG_SZ\s+(\S+)/)
+    if (!match) return
+
+    const proxyUrl = match[1].trim()
+    // 统一添加 http:// 前缀（注册表通常只存 host:port）
+    const fullUrl = proxyUrl.startsWith("http") ? proxyUrl : `http://${proxyUrl}`
+    process.env.HTTP_PROXY = fullUrl
+    process.env.HTTPS_PROXY = fullUrl
+    console.log(`[proxy] detected system proxy: ${fullUrl}`)
+  } catch {
+    // reg query 可能失败（无权限、非 Windows 等），静默忽略
+  }
+}
+
+/**
  * 从持久化设置中读取代理配置并设置环境变量，
  * 使 autoUpdater.checkForUpdates / downloadUpdate 通过代理访问 GitHub。
+ * 如果用户未手动配置，则尝试检测系统代理。
  */
 function applyProxyFromSettings() {
   try {
     const settingsPath = path.join(DATA_DIR, "settings.json")
-    if (!fs.existsSync(settingsPath)) return
+    if (!fs.existsSync(settingsPath)) {
+      detectSystemProxy()
+      return
+    }
 
     const raw = fs.readFileSync(settingsPath, "utf-8")
     const settings = JSON.parse(raw)
@@ -412,9 +446,11 @@ function applyProxyFromSettings() {
     } else {
       delete process.env.HTTP_PROXY
       delete process.env.HTTPS_PROXY
+      // 用户手动关闭了代理 → 不自动检测系统代理
     }
   } catch (e) {
     console.error("[scanner] Failed to apply proxy from settings:", e.message || e)
+    detectSystemProxy()
   }
 }
 
