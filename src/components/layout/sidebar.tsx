@@ -4,12 +4,13 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { useI18n } from "@/lib/i18n/context"
-import { Shield, LayoutDashboard, Search, History, FileText, Settings, X } from "lucide-react"
+import { Shield, LayoutDashboard, Search, History, FileText, Server, Settings, X } from "lucide-react"
 
 const navItems = [
   { href: "/", label: "nav.dashboard", icon: LayoutDashboard },
   { href: "/scan/new", label: "nav.newScan", icon: Search },
   { href: "/scan/history", label: "nav.scanHistory", icon: History },
+  { href: "/scanners", label: "nav.scanners", icon: Server },
   { href: "/reports", label: "nav.reports", icon: FileText },
   { href: "/settings", label: "nav.settings", icon: Settings },
 ]

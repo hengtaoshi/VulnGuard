@@ -10,6 +10,7 @@ export const en: TranslationDict = {
     newScan: "New Scan",
     scanHistory: "Scan History",
     reports: "Reports",
+    scanners: "Scanners",
     settings: "Settings",
   },
   header: {

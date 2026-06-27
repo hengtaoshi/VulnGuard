@@ -8,6 +8,7 @@ export const zh = {
     newScan: "新建扫描",
     scanHistory: "扫描历史",
     reports: "安全报告",
+    scanners: "扫描器管理",
     settings: "设置",
   },
   header: {
