@@ -95,6 +95,10 @@ ipcMain.handle("check-for-updates", async () => {
     if (latestVersion && compareVersions(latestVersion, pkgVersion) > 0) {
       return { ok: true, canUpdate: true, version: latestVersion }
     }
+    // 版本不同但比较不出大小（如 0.6.21 vs 0.6.3）也视为可更新
+    if (latestVersion && latestVersion.replace(/^v/i, "") !== pkgVersion.replace(/^v/i, "")) {
+      return { ok: true, canUpdate: true, version: latestVersion }
+    }
     return { ok: true, canUpdate: false }
   } catch (e) {
     return { ok: false, error: e.message }
