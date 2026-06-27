@@ -37,27 +37,6 @@
   }
 }
 
-/* Dark-theme number input spinners */
-input[type="number"] {
-  -moz-appearance: textfield;
-}
-input[type="number"]::-webkit-inner-spin-button,
-input[type="number"]::-webkit-outer-spin-button {
-  opacity: 1;
-  height: 1.6em;
-  width: 1.2em;
-  background: hsl(var(--secondary));
-  border: 1px solid hsl(var(--border));
-  border-radius: 2px;
-  cursor: pointer;
-  box-shadow: inset 0 0 0 1px hsl(var(--border));
-}
-/* 让 spinner 箭头也匹配主题色 */
-input[type="number"]::-webkit-inner-spin-button:hover {
-  background: hsl(var(--accent));
-}
-
-/* Custom select styling to match dark theme */
 select option {
   background: hsl(var(--card));
   color: hsl(var(--foreground));
@@ -81,4 +60,23 @@ select optgroup {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: hsl(228, 25%, 30%);
+}
+
+/* Dark-theme number input spinners */
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  opacity: 1;
+  height: 1.6em;
+  width: 1.2em;
+  background: hsl(var(--muted));
+  border: 1px solid hsl(var(--border));
+  border-radius: 4px;
+  cursor: pointer;
+}
+input[type="number"]::-webkit-inner-spin-button:hover,
+input[type="number"]::-webkit-outer-spin-button:hover {
+  background: hsl(var(--accent));
 }
