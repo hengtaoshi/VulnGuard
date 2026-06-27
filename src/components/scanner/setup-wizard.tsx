@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useCallback, useEffect } from "react"
-import { Shield, Download, CheckCircle2, AlertCircle, Search, FileSearch, Lock, Cpu, Package } from "lucide-react"
+import { Shield, Download, CheckCircle2, AlertCircle, Search, FileSearch, Lock, Cpu, Package, Minimize2, Expand, Settings } from "lucide-react"
 
 interface InstallProgress {
   percent: number
@@ -85,6 +85,58 @@ function totalSizeForCategories(categories: Set<string>): number {
   return total
 }
 
+// ─── Circular Progress Ball Component ───────────────────────────────────────────
+
+function CircularProgressBall({ percent, onClick, done, error }: {
+  percent: number
+  onClick: () => void
+  done: boolean
+  error: boolean
+}) {
+  const r = 28
+  const circumference = 2 * Math.PI * r
+  const offset = circumference - (Math.min(percent, 100) / 100) * circumference
+  const strokeColor = done ? "#22c55e" : error ? "#ef4444" : "#3b82f6"
+
+  return (
+    <button
+      onClick={onClick}
+      className="fixed bottom-6 right-6 z-50 flex items-center justify-center cursor-pointer group"
+      title="点击查看安装详情"
+    >
+      {/* Pulsing ring background */}
+      <div className={`absolute inset-0 rounded-full ${done ? "bg-emerald-500/20" : error ? "bg-red-500/20" : "bg-primary/20"} animate-ping opacity-75`} />
+      {/* Main circle */}
+      <div className="relative flex items-center justify-center w-20 h-20 rounded-full bg-card border border-border shadow-2xl backdrop-blur-sm">
+        <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 64 64">
+          <circle cx="32" cy="32" r={r} fill="none" stroke="currentColor" strokeWidth="4" className="text-muted/20" />
+          <circle
+            cx="32" cy="32" r={r} fill="none"
+            stroke={strokeColor}
+            strokeWidth="4"
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={offset}
+            className="transition-all duration-500 ease-out"
+          />
+        </svg>
+        <div className="flex flex-col items-center">
+          {done ? (
+            <CheckCircle2 className="h-6 w-6 text-emerald-500" />
+          ) : error ? (
+            <AlertCircle className="h-6 w-6 text-red-500" />
+          ) : (
+            <>
+              <span className="text-xs font-bold tabular-nums">{Math.round(percent)}%</span>
+              <Download className="h-3 w-3 text-primary animate-bounce mt-0.5" />
+            </>
+          )}
+        </div>
+      </div>
+    </button>
+  )
+}
+
 // ─── Component ─────────────────────────────────────────────────────────────────
 
 interface SetupWizardProps {
@@ -93,7 +145,7 @@ interface SetupWizardProps {
 }
 
 export function SetupWizard({ open, onFinish }: SetupWizardProps) {
-  const [step, setStep] = useState<"welcome" | "select" | "installing" | "done">("welcome")
+  const [step, setStep] = useState<"welcome" | "select" | "proxy" | "installing" | "done">("welcome")
   const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set(["sast", "secret", "dependency"]))
   const [currentScanner, setCurrentScanner] = useState("")
   const [currentLabel, setCurrentLabel] = useState("")
@@ -104,6 +156,12 @@ export function SetupWizard({ open, onFinish }: SetupWizardProps) {
   const [isElectron, setIsElectron] = useState(false)
   const abortRef = useRef(false)
   const [displayPct, setDisplayPct] = useState(0)
+  const [expanded, setExpanded] = useState(false)
+
+  // Proxy settings
+  const [proxyEnabled, setProxyEnabled] = useState(false)
+  const [httpProxy, setHttpProxy] = useState("http://127.0.0.1:7897")
+  const [httpsProxy, setHttpsProxy] = useState("http://127.0.0.1:7897")
 
   useEffect(() => {
     setIsElectron(typeof window !== "undefined" && !!window.vulnguard?.downloadScanner)
@@ -131,8 +189,28 @@ export function SetupWizard({ open, onFinish }: SetupWizardProps) {
     })
   }
 
+  // 保存代理设置到后端
+  const saveProxySettings = useCallback(async (): Promise<boolean> => {
+    if (!proxyEnabled) return true
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          proxyEnabled: true,
+          httpProxy: httpProxy || "",
+          httpsProxy: httpsProxy || "",
+        }),
+      })
+      return res.ok
+    } catch {
+      return false
+    }
+  }, [proxyEnabled, httpProxy, httpsProxy])
+
   const startInstall = useCallback(async () => {
     setStep("installing")
+    setExpanded(false) // 默认最小化为悬浮球
     setError(null)
     setCompleted([])
     setFailed([])
@@ -239,11 +317,113 @@ export function SetupWizard({ open, onFinish }: SetupWizardProps) {
     }
 
     setStep("done")
-  }, [selectedCategories, isElectron])
+    setExpanded(false)
+  }, [selectedCategories, isElectron, proxyEnabled, httpProxy, httpsProxy])
 
   const totalSize = totalSizeForCategories(selectedCategories)
 
-  if (!open) return null
+  // ── Not open → nothing ──
+  if (!open && step !== "installing") return null
+
+  // ── Installing step: floating ball (minimized) or full overlay (expanded) ──
+  if (step === "installing") {
+    const allScanners = getScannersForCategories(selectedCategories)
+    const total = allScanners.length
+    const doneCount = completed.length + failed.length
+
+    return (
+      <>
+        {/* Floating progress ball — always visible during installation */}
+        <CircularProgressBall
+          percent={displayPct}
+          onClick={() => setExpanded((v) => !v)}
+          done={doneCount === total && total > 0}
+          error={failed.length > 0 && completed.length === 0}
+        />
+
+        {/* Expanded detail overlay — shown when user clicks the ball */}
+        {expanded && (
+          <div className="fixed inset-0 z-40 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+            <div className="w-full max-w-xl mx-auto p-8 relative">
+              {/* Minimize button — back to floating ball */}
+              <button
+                onClick={() => setExpanded(false)}
+                className="absolute top-4 right-4 rounded-full p-2 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                title="最小化到悬浮球"
+              >
+                <Minimize2 className="h-4 w-4" />
+              </button>
+
+              <div className="text-center space-y-4 mb-8">
+                <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-primary/10">
+                  <Download className="h-7 w-7 text-primary animate-bounce" />
+                </div>
+                <h2 className="text-lg font-bold">正在安装扫描器</h2>
+                <p className="text-sm text-muted-foreground">
+                  {doneCount}/{total} — {currentLabel}
+                </p>
+              </div>
+
+              {/* 单调递增进度条 */}
+              <div className="h-3 w-full overflow-hidden rounded-full bg-secondary mb-5">
+                <div
+                  className="h-full rounded-full bg-primary transition-all duration-500 ease-out"
+                  style={{ width: `${Math.max(1, displayPct)}%` }}
+                />
+              </div>
+
+              {error && (
+                <div className="flex items-center gap-2 rounded-lg bg-destructive/10 p-3 text-sm text-destructive mb-4">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  {error}
+                </div>
+              )}
+
+              {/* Completed/failed list */}
+              <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                {completed.map((name) => (
+                  <div key={name} className="flex items-center gap-2 text-sm text-emerald-500">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    {name}
+                  </div>
+                ))}
+                {failed.map((name) => (
+                  <div key={name} className="flex items-center gap-2 text-sm text-destructive">
+                    <AlertCircle className="h-3.5 w-3.5" />
+                    {name}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </>
+    )
+  }
+
+  // ── Done step ──
+  if (step === "done") {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/95 backdrop-blur-sm">
+        <div className="w-full max-w-lg mx-auto p-8 text-center space-y-5">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-emerald-500/10">
+            <CheckCircle2 className="h-8 w-8 text-emerald-500" />
+          </div>
+          <h2 className="text-xl font-bold">配置完成</h2>
+          <div className="text-sm text-muted-foreground space-y-1">
+            {completed.length > 0 && <p>✓ {completed.length} 个扫描器安装成功</p>}
+            {failed.length > 0 && <p className="text-destructive">✗ {failed.length} 个安装失败，可稍后在设置中重试</p>}
+          </div>
+          <button
+            onClick={() => { setStep("welcome"); onFinish() }}
+            className="rounded-lg bg-primary px-8 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            开始使用
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   // ── Welcome step ──
   if (step === "welcome") {
@@ -268,7 +448,7 @@ export function SetupWizard({ open, onFinish }: SetupWizardProps) {
               开始配置
             </button>
             <button
-              onClick={onFinish}
+              onClick={() => { setStep("welcome"); onFinish() }}
               className="rounded-lg bg-secondary px-4 py-2.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
               跳过，稍后配置
@@ -339,16 +519,64 @@ export function SetupWizard({ open, onFinish }: SetupWizardProps) {
             })}
           </div>
 
+          {/* Proxy configuration toggle */}
+          <div className="mb-6 rounded-xl border border-border p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Settings className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">网络代理设置</span>
+                <span className="text-[10px] text-muted-foreground">（如 GitHub 无法访问请开启）</span>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={proxyEnabled}
+                  onChange={(e) => setProxyEnabled(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-muted rounded-full peer peer-checked:bg-primary after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4" />
+              </label>
+            </div>
+            {proxyEnabled && (
+              <div className="mt-3 space-y-2 pt-3 border-t border-border">
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">HTTP 代理</label>
+                  <input
+                    type="text"
+                    value={httpProxy}
+                    onChange={(e) => setHttpProxy(e.target.value)}
+                    placeholder="http://127.0.0.1:7897"
+                    className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">HTTPS 代理</label>
+                  <input
+                    type="text"
+                    value={httpsProxy}
+                    onChange={(e) => setHttpsProxy(e.target.value)}
+                    placeholder="http://127.0.0.1:7897"
+                    className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
           <div className="flex flex-col gap-3 max-w-sm mx-auto">
             <button
-              onClick={startInstall}
+              onClick={async () => {
+                // 先保存代理设置，再开始安装
+                await saveProxySettings()
+                startInstall()
+              }}
               disabled={selectedCategories.size === 0}
               className="rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               安装已选 ({getScannersForCategories(selectedCategories).length} 个)
             </button>
             <button
-              onClick={onFinish}
+              onClick={() => { setStep("welcome"); onFinish() }}
               className="rounded-lg bg-secondary px-4 py-2.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
               稍后再说
@@ -359,79 +587,5 @@ export function SetupWizard({ open, onFinish }: SetupWizardProps) {
     )
   }
 
-  // ── Installing step ──
-  if (step === "installing") {
-    const allScanners = getScannersForCategories(selectedCategories)
-    const total = allScanners.length
-    const doneCount = completed.length + failed.length
-
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/95 backdrop-blur-sm">
-        <div className="w-full max-w-xl mx-auto p-8">
-          <div className="text-center space-y-4 mb-8">
-            <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-primary/10">
-              <Download className="h-7 w-7 text-primary animate-bounce" />
-            </div>
-            <h2 className="text-lg font-bold">正在安装扫描器</h2>
-            <p className="text-sm text-muted-foreground">
-              {doneCount}/{total} — {currentLabel}
-            </p>
-          </div>
-
-          {/* 单调递增进度条 */}
-          <div className="h-3 w-full overflow-hidden rounded-full bg-secondary mb-5">
-            <div
-              className="h-full rounded-full bg-primary transition-all duration-500 ease-out"
-              style={{ width: `${Math.max(1, displayPct)}%` }}
-            />
-          </div>
-
-          {error && (
-            <div className="flex items-center gap-2 rounded-lg bg-destructive/10 p-3 text-sm text-destructive mb-4">
-              <AlertCircle className="h-4 w-4 shrink-0" />
-              {error}
-            </div>
-          )}
-
-          {/* Completed/failed list */}
-          <div className="space-y-1.5 max-h-40 overflow-y-auto">
-            {completed.map((name) => (
-              <div key={name} className="flex items-center gap-2 text-sm text-emerald-500">
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                {name}
-              </div>
-            ))}
-            {failed.map((name) => (
-              <div key={name} className="flex items-center gap-2 text-sm text-destructive">
-                <AlertCircle className="h-3.5 w-3.5" />
-                {name}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  // ── Done step ──
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/95 backdrop-blur-sm">
-      <div className="w-full max-w-lg mx-auto p-8 text-center space-y-5">
-        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-emerald-500/10">
-          <CheckCircle2 className="h-8 w-8 text-emerald-500" />
-        </div>
-        <h2 className="text-xl font-bold">配置完成</h2>
-        <div className="text-sm text-muted-foreground space-y-1">
-          {completed.length > 0 && <p>✓ {completed.length} 个扫描器安装成功</p>}
-          {failed.length > 0 && <p className="text-destructive">✗ {failed.length} 个安装失败，可稍后在设置中重试</p>}
-        </div>
-        <button
-          onClick={onFinish}
-          className="rounded-lg bg-primary px-8 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-        >
-          开始使用
-        </button>
-      </div>
-    </div>
-  )
+  return null
 }
