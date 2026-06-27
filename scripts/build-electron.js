@@ -151,7 +151,8 @@ function main() {
     : `npx electron-builder --config electron-builder.yml`
 
   try {
-    run(buildCmd)
+    // Electron-builder 打包 NSIS 可能很久，禁用超时
+    execSync(buildCmd, { cwd: ROOT, stdio: "pipe" })
 
     // Show results
     console.log(`\n  ${COLORS.green}════════════════════════════════════════════${COLORS.reset}`)
