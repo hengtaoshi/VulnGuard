@@ -74,6 +74,27 @@ ipcMain.handle("download-scanner", async (_event, scannerName) => {
     // Ensure the data dir is known to the downloader (for proxy settings lookup)
     process.env.VULNGUARD_DATA_DIR = DATA_DIR
     applyProxyFromSettings()
+    const httpsProxy = process.env.HTTPS_PROXY || process.env.https_proxy
+    console.log(`[scanner] Downloading ${scannerName}, proxy: ${httpsProxy || "NONE"}`)
+    if (!httpsProxy) {
+      console.log(`[scanner] WARNING: No proxy configured! Settings path: ${path.join(DATA_DIR, "settings.json")}`)
+      try {
+        const exists = require("fs").existsSync(path.join(DATA_DIR, "settings.json"))
+        console.log(`[scanner] settings.json exists: ${exists}`)
+        if (exists) {
+          const raw = require("fs").readFileSync(path.join(DATA_DIR, "settings.json"), "utf-8")
+          const s = JSON.parse(raw)
+          console.log(`[scanner] proxyEnabled: ${s.proxyEnabled}, httpsProxy: ${s.httpsProxy}`)
+        }
+      } catch (e) {
+        console.log(`[scanner] settings check error: ${e.message}`)
+      }
+    }
+    // 如果 settings.json 没配代理，但系统环境变量有，也直接用
+    if (!httpsProxy && (process.env.HTTP_PROXY || process.env.http_proxy)) {
+      process.env.HTTPS_PROXY = process.env.HTTP_PROXY || process.env.http_proxy
+      console.log(`[scanner] Using HTTPS_PROXY from env: ${process.env.HTTPS_PROXY}`)
+    }
     const result = await installScanner(scannerName, TOOLS_DIR, (progress) => {
       // 通过 IPC 回传下载进度给渲染进程
       if (mainWindow && !mainWindow.isDestroyed()) {
@@ -391,7 +412,7 @@ function applyProxyFromSettings() {
       delete process.env.HTTPS_PROXY
     }
   } catch (e) {
-    // 设置文件不存在或解析失败时静默跳过
+    console.error("[scanner] Failed to apply proxy from settings:", e.message || e)
   }
 }
 
