@@ -7,7 +7,6 @@ import { Shield, AlertTriangle, CheckCircle, Activity, Loader2, Download, X } fr
 import { useI18n } from "@/lib/i18n/context"
 import { useStats, useScans } from "@/lib/api/hooks"
 import type { ScanSummary } from "@/lib/api/types"
-import { SetupWizard } from "@/components/scanner/setup-wizard"
 import { useState, useEffect } from "react"
 import { UpdateDialog } from "@/components/update-dialog"
 
@@ -39,8 +38,6 @@ export default function Dashboard() {
   const { t } = useI18n()
   const { data: stats, isLoading: statsLoading } = useStats()
   const { data: scans, isLoading: scansLoading } = useScans()
-
-  const [showWizard, setShowWizard] = useState(false)
 
   // ─── Auto-update detection ──────────────────────────────────────
   const [updateInfo, setUpdateInfo] = useState<{ version: string; currentVersion: string } | null>(null)
@@ -81,28 +78,7 @@ export default function Dashboard() {
     return () => unsub()
   }, [])
 
-  // 启动检测：首次安装 或 升级后新扫描器系统未部署 → 弹出安装向导
-  useEffect(() => {
-    try {
-      const onboarded = localStorage.getItem("vulnguard-onboarded")
-
-      // Electron 环境下额外检查归档是否已解压（兼容 v0.5.0 升级）
-      if (onboarded === "true" && typeof window !== "undefined" && window.vulnguard?.getScannerStatus) {
-        window.vulnguard.getScannerStatus().then((status) => {
-          if (!status.archiveExtracted) {
-            setShowWizard(true)
-          }
-        }).catch(() => {})
-        return
-      }
-
-      if (onboarded !== "true") {
-        setShowWizard(true)
-      }
-    } catch {
-      // localStorage 不可用时（SSR），不回退到旧逻辑
-    }
-  }, [])
+  // Wizard 由 AppLayout 统一管理
 
   const typeLabels: Record<string, string> = {
     source: t("dashboard.typeSource"),
@@ -261,15 +237,6 @@ export default function Dashboard() {
           )}
         </CardContent>
       </Card>
-
-      {/* 首次启动安装向导 — localStorage 标记未设置时弹出 */}
-      <SetupWizard
-        open={showWizard}
-        onFinish={() => {
-          setShowWizard(false)
-          try { localStorage.setItem("vulnguard-onboarded", "true") } catch {}
-        }}
-      />
 
       {/* 更新对话框 */}
       <UpdateDialog

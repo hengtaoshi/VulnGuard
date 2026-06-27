@@ -22,8 +22,23 @@ import { runCodeqlScan } from "./codeql-scanner"
 
 const { existsSync } = require("fs") as typeof import("fs")
 
+/** 存档标记文件，v0.6.6+ 的扫描器统一通过单个归档下载后标记 */
+const ARCHIVE_MARKER = join(TOOLS_DIR, ".archive-extracted")
+
+function archiveExtracted(): boolean {
+  return existsSync(ARCHIVE_MARKER)
+}
+
+/** 归档中包含的扫描器名称集合 */
+const BUNDLED_SCANNERS = new Set([
+  "semgrep", "gitleaks", "bandit", "pip-audit", "checkov",
+  "trivy", "nuclei", "trufflehog", "osv-scanner", "scorecard",
+  "dependency-check", "codeql",
+])
+
 /** Quick binary check — file existence + optional PATH fallback via `where` */
 function binExists(name: string, exeName?: string): boolean {
+  if (BUNDLED_SCANNERS.has(name) && !archiveExtracted()) return false
   if (existsSync(join(TOOLS_BIN, exeName || name))) return true
   // Only try PATH fallback if tools/bin exists (avoids 2s where timeout in production)
   if (!existsSync(TOOLS_BIN)) return false
@@ -114,21 +129,21 @@ const scanners: Scanner[] = [
     name: "trufflehog",
     displayName: "TruffleHog",
     category: "secret",
-    isAvailable: () => existsSync(join(TOOLS_BIN, "trufflehog.exe")),
+    isAvailable: () => archiveExtracted() && existsSync(join(TOOLS_BIN, "trufflehog.exe")),
     scan: (targetPath: string) => runTrufflehogScan(targetPath),
   },
   {
     name: "scorecard",
     displayName: "OpenSSF Scorecard",
     category: "sast",
-    isAvailable: () => existsSync(join(TOOLS_BIN, "scorecard.exe")),
+    isAvailable: () => archiveExtracted() && existsSync(join(TOOLS_BIN, "scorecard.exe")),
     scan: (targetPath: string) => runScorecardScan(targetPath),
   },
   {
     name: "osv-scanner",
     displayName: "OSV-Scanner",
     category: "dependency",
-    isAvailable: () => existsSync(join(TOOLS_BIN, "osv-scanner.exe")),
+    isAvailable: () => archiveExtracted() && existsSync(join(TOOLS_BIN, "osv-scanner.exe")),
     scan: (targetPath: string) => runOsvScan(targetPath),
   },
   {
@@ -136,6 +151,7 @@ const scanners: Scanner[] = [
     displayName: "Dependency-Check",
     category: "dependency",
     isAvailable: () => {
+      if (!archiveExtracted()) return false
       if (existsSync(join(TOOLS_BIN, "dependency-check.bat"))) return true
       if (existsSync(join(TOOLS_BIN, "dependency-check.sh"))) return true
       if (existsSync(join(TOOLS_DIR, "dependency-check", "bin", "dependency-check.bat"))) return true
@@ -148,6 +164,7 @@ const scanners: Scanner[] = [
     displayName: "CodeQL",
     category: "sast",
     isAvailable: () => {
+      if (!archiveExtracted()) return false
       if (existsSync(join(TOOLS_DIR, "codeql", "codeql", "codeql.exe"))) return true
       return binExists("codeql")
     },
