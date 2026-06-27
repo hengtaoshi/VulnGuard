@@ -72,7 +72,7 @@ ipcMain.handle("get-scanner-status", () => {
 ipcMain.handle("download-scanner", async (_event, scannerName) => {
   try {
     // Ensure the data dir is known to the downloader (for proxy settings lookup)
-    process.env.VULNGUARD_DATA_DIR = DATA_DIR
+    process.env.VULNGUARD_DATA_DIR = path.join(app.getPath("userData"))
     applyProxyFromSettings()
     const httpsProxy = process.env.HTTPS_PROXY || process.env.https_proxy
     console.log(`[scanner] Downloading ${scannerName}, proxy: ${httpsProxy || "NONE"}`)
@@ -218,7 +218,7 @@ function startNextServer(port) {
       PORT: String(port),
       NODE_ENV: "production",
       DATA_DIR: DATA_DIR,
-      VULNGUARD_DATA_DIR: DATA_DIR,
+      VULNGUARD_DATA_DIR: path.join(app.getPath("userData")),
     }
 
     // Reset server stderr for each start attempt

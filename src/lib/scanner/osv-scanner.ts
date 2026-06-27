@@ -14,8 +14,9 @@ import { join } from "path"
 import { existsSync } from "fs"
 import type { Vulnerability } from "@/lib/api/types"
 import type { ScanResult } from "./types"
+import { TOOLS_BIN } from "./paths"
 
-const OSV_PATH = join(process.cwd(), "tools", "bin", "osv-scanner.exe")
+const OSV_PATH = join(TOOLS_BIN, "osv-scanner.exe")
 
 function isAvailable(): boolean {
   return existsSync(OSV_PATH)

@@ -3,6 +3,7 @@ import { join } from "path"
 import { existsSync, mkdirSync } from "fs"
 import type { Vulnerability } from "@/lib/api/types"
 import type { ScanResult } from "./types"
+import { TOOLS_BIN } from "./paths"
 
 interface TrivyResult {
   Results?: {
@@ -22,7 +23,7 @@ interface TrivyResult {
   }[]
 }
 
-const TRIVY_PATH = join(process.cwd(), "tools", "bin", "trivy.exe")
+const TRIVY_PATH = join(TOOLS_BIN, "trivy.exe")
 
 function severityMap(sev: string): "Critical" | "High" | "Medium" | "Low" {
   switch (sev.toUpperCase()) {

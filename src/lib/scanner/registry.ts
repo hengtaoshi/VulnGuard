@@ -1,6 +1,7 @@
 import { execSync } from "child_process"
 import { join } from "path"
 import type { Scanner } from "./types"
+import { TOOLS_BIN, TOOLS_DIR } from "./paths"
 
 // Source-mode scanners
 import { runSemgrepScan } from "./semgrep"
@@ -19,7 +20,6 @@ import { runOsvScan } from "./osv-scanner"
 import { runDependencyCheckScan } from "./dependency-check"
 import { runCodeqlScan } from "./codeql-scanner"
 
-const TOOLS_BIN = join(process.cwd(), "tools", "bin")
 const { existsSync } = require("fs") as typeof import("fs")
 
 /** Quick binary check — file existence + optional PATH fallback via `where` */
@@ -58,7 +58,7 @@ const scanners: Scanner[] = [
     name: "bandit",
     displayName: "Bandit",
     category: "sast",
-    isAvailable: () => binExists("bandit"),
+    isAvailable: () => binExists("bandit", "bandit.exe"),
     scan: runBanditScan,
   },
   {
@@ -72,14 +72,14 @@ const scanners: Scanner[] = [
     name: "pip-audit",
     displayName: "pip-audit",
     category: "dependency",
-    isAvailable: () => binExists("pip-audit"),
+    isAvailable: () => binExists("pip-audit", "pip-audit.exe"),
     scan: runPipAuditScan,
   },
   {
     name: "checkov",
     displayName: "Checkov",
     category: "filesystem",
-    isAvailable: () => binExists("checkov"),
+    isAvailable: () => binExists("checkov", "checkov.exe"),
     scan: runCheckovScan,
   },
   {
@@ -136,10 +136,9 @@ const scanners: Scanner[] = [
     displayName: "Dependency-Check",
     category: "dependency",
     isAvailable: () => {
-      const TOOLS = join(process.cwd(), "tools", "bin")
-      if (existsSync(join(TOOLS, "dependency-check.bat"))) return true
-      if (existsSync(join(TOOLS, "dependency-check.sh"))) return true
-      if (existsSync(join(process.cwd(), "tools", "dependency-check", "bin", "dependency-check.bat"))) return true
+      if (existsSync(join(TOOLS_BIN, "dependency-check.bat"))) return true
+      if (existsSync(join(TOOLS_BIN, "dependency-check.sh"))) return true
+      if (existsSync(join(TOOLS_DIR, "dependency-check", "bin", "dependency-check.bat"))) return true
       return binExists("dependency-check")
     },
     scan: (targetPath: string) => runDependencyCheckScan(targetPath),
@@ -149,7 +148,7 @@ const scanners: Scanner[] = [
     displayName: "CodeQL",
     category: "sast",
     isAvailable: () => {
-      if (existsSync(join(process.cwd(), "tools", "bin", "codeql", "codeql", "codeql.exe"))) return true
+      if (existsSync(join(TOOLS_DIR, "codeql", "codeql", "codeql.exe"))) return true
       return binExists("codeql")
     },
     scan: (targetPath: string) => runCodeqlScan(targetPath),

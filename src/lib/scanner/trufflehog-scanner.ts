@@ -13,8 +13,9 @@ import { join } from "path"
 import { existsSync } from "fs"
 import type { Vulnerability } from "@/lib/api/types"
 import type { ScanResult } from "./types"
+import { TOOLS_BIN } from "./paths"
 
-const TRUFFLEHOG_PATH = join(process.cwd(), "tools", "bin", "trufflehog.exe")
+const TRUFFLEHOG_PATH = join(TOOLS_BIN, "trufflehog.exe")
 
 function isAvailable(): boolean {
   return existsSync(TRUFFLEHOG_PATH)

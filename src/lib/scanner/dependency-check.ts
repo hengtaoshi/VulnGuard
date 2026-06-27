@@ -3,8 +3,9 @@ import { join } from "path"
 import { existsSync, mkdirSync, readdirSync } from "fs"
 import type { Vulnerability } from "@/lib/api/types"
 import type { ScanResult } from "./types"
+import { TOOLS_BIN, TOOLS_DIR } from "./paths"
 
-const BIN_DIR = join(process.cwd(), "tools", "bin")
+const BIN_DIR = TOOLS_BIN
 const DC_BAT = join(BIN_DIR, "dependency-check.bat")
 const DC_SH = join(BIN_DIR, "dependency-check.sh")
 const DC_OUTPUT_DIR = join(process.cwd(), ".dc-report")
@@ -37,9 +38,7 @@ interface DcReport {
 
 function resolveDcPath(): string | null {
   // Check extracted install first (tools/dependency-check/bin/)
-  const { join } = require("path") as typeof import("path")
-  const { existsSync } = require("fs") as typeof import("fs")
-  const dcDir = join(process.cwd(), "tools", "dependency-check", "bin", "dependency-check.bat")
+  const dcDir = join(TOOLS_DIR, "dependency-check", "bin", "dependency-check.bat")
   if (existsSync(dcDir)) return dcDir
 
   // Check bundled location (tools/bin/)

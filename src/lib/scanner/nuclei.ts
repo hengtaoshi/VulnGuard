@@ -2,6 +2,7 @@ import { execAsync } from "./exec"
 import { join } from "path"
 import { existsSync, readdirSync } from "fs"
 import { homedir } from "os"
+import { TOOLS_BIN, TOOLS_DIR } from "./paths"
 import type { Vulnerability } from "@/lib/api/types"
 import type { ScanResult } from "./types"
 
@@ -17,8 +18,8 @@ interface NucleiFinding {
   info: { description?: string; remediation?: string; reference?: string }
 }
 
-const NUCLEI_PATH = join(process.cwd(), "tools", "bin", "nuclei.exe")
-const CUSTOM_TEMPLATES = join(process.cwd(), "tools", "nuclei-templates")
+const NUCLEI_PATH = join(TOOLS_BIN, "nuclei.exe")
+const CUSTOM_TEMPLATES = join(TOOLS_DIR, "nuclei-templates")
 const HOME_TEMPLATES = join(homedir(), "nuclei-templates")
 
 function severityMap(sev: string): "Critical" | "High" | "Medium" | "Low" {

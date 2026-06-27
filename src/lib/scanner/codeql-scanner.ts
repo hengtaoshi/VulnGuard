@@ -22,8 +22,9 @@ import { existsSync, mkdirSync, rmSync } from "fs"
 import { randomUUID } from "crypto"
 import type { Vulnerability } from "@/lib/api/types"
 import type { ScanResult } from "./types"
+import { TOOLS_DIR } from "./paths"
 
-const CODEQL_DIR = join(process.cwd(), "tools", "bin", "codeql", "codeql")
+const CODEQL_DIR = join(TOOLS_DIR, "codeql", "codeql")
 
 // CodeQL 查询包缓存路径（由 codeql pack download 预下载）
 const CODEQL_PACKAGES = join(require("os").homedir(), ".codeql", "packages")

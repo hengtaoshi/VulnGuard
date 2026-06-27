@@ -1,6 +1,8 @@
 import { execAsync } from "./exec"
+import { join } from "path"
 import type { Vulnerability } from "@/lib/api/types"
 import type { ScanResult } from "./types"
+import { TOOLS_BIN } from "./paths"
 
 interface CheckovReport {
   check_type: string
@@ -30,10 +32,12 @@ function severityMap(sev: string | null): "Critical" | "High" | "Medium" | "Low"
   }
 }
 
+const CHECKOV_PATH = join(TOOLS_BIN, "checkov.exe")
+
 function isAvailable(): boolean {
   try {
     const { execSync } = require("child_process")
-    execSync("checkov --version", { stdio: "pipe", timeout: 5000 })
+    execSync(`"${CHECKOV_PATH}" --version`, { stdio: "pipe", timeout: 5000 })
     return true
   } catch {
     return false
@@ -50,7 +54,7 @@ export async function runCheckovScan(targetPath: string): Promise<ScanResult> {
 
   try {
     const { stdout } = await execAsync(
-      `checkov -d "${targetPath.replace(/\\/g, "/")}" --framework terraform kubernetes dockerfile cloudformation --output json`,
+      `"${CHECKOV_PATH}" -d "${targetPath.replace(/\\/g, "/")}" --framework terraform kubernetes dockerfile cloudformation --output json`,
       { timeout: 120000, maxBuffer: 10 * 1024 * 1024 },
     )
     rawJson = stdout.trim()

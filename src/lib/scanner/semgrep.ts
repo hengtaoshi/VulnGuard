@@ -3,8 +3,10 @@ import { join } from "path"
 import { existsSync } from "fs"
 import type { Vulnerability } from "@/lib/api/types"
 import type { ScanResult } from "./types"
+import { TOOLS_BIN, TOOLS_DIR } from "./paths"
 
-const LOCAL_RULES = join(process.cwd(), "tools", "semgrep-rules", "security.yaml")
+const SEMGREP_PATH = join(TOOLS_BIN, "semgrep.exe")
+const LOCAL_RULES = join(TOOLS_DIR, "semgrep-rules", "security.yaml")
 
 type SemgrepSev = "ERROR" | "WARNING" | "INFO"
 type VulnSev = "Critical" | "High" | "Medium"
@@ -41,7 +43,7 @@ function runRemoteSemgrep(targetPath: string): string | null {
       try {
         const target = targetPath.replace(/\\/g, "/")
         return execSync(
-          `"semgrep" --config="${remote}" --json --timeout=60 "${target}"`,
+          `"${SEMGREP_PATH}" --config="${remote}" --json --timeout=60 "${target}"`,
           { timeout: 180000, maxBuffer: 10 * 1024 * 1024, encoding: "utf-8", env: { ...process.env, PYTHONIOENCODING: "utf-8" } },
         )
       } catch { /* try next */ }
@@ -63,7 +65,7 @@ export async function runSemgrepScan(targetPath: string): Promise<ScanResult> {
     try {
       const rulesPath = LOCAL_RULES.replace(/\\/g, "/")
       const target = targetPath.replace(/\\/g, "/")
-      const cmd = `"semgrep" --config="${rulesPath}" --json --timeout=30 "${target}"`
+      const cmd = `"${SEMGREP_PATH}" --config="${rulesPath}" --json --timeout=30 "${target}"`
       stdout = execSync(cmd, { timeout: 120000, maxBuffer: 10 * 1024 * 1024, encoding: "utf-8", env: { ...process.env, PYTHONIOENCODING: "utf-8" } })
       usedLocalRules = true
     } catch { /* fall through to remote */ }

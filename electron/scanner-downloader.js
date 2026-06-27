@@ -1,114 +1,42 @@
 /**
  * VulnGuard Scanner Downloader
  *
- * Downloads scanner binaries/tools to the user data directory.
- * Supports progress reporting via IPC callbacks and proxy-aware downloads.
+ * Downloads the single unified scanners archive and extracts it.
+ * All scanners are pre-packaged into one scanners.tar.gz on GitHub Releases.
  */
 const https = require("https")
 const http = require("http")
-const { createWriteStream, existsSync, mkdirSync, unlinkSync, readFileSync, openSync, readSync, closeSync, statSync } = require("fs")
+const { createWriteStream, existsSync, mkdirSync, unlinkSync, readFileSync, openSync, readSync, closeSync, statSync, rmSync, writeFileSync } = require("fs")
 const { join, dirname } = require("path")
 const { execSync } = require("child_process")
 const { platform } = require("os")
 const { URL } = require("url")
 
 const IS_WIN = platform() === "win32"
-
-// UserData dir — set by main.js via the APP_DATA_DIR env var fallback
 const DATA_DIR = process.env.VULNGUARD_DATA_DIR || ""
 
-// --- Scanner definitions ---------------------------------------------------
+// Archive URL — pinned to v0.6.5 release (stable scanner bundle, not per-version)
+const ARCHIVE_URL = "https://github.com/hengtaoshi/VulnGuard/releases/download/v0.6.5/scanners.tar.gz"
 
-const SCANNER_DEFS = {
-  gitleaks: {
-    label: "Gitleaks",
-    type: "binary",
-    url: `https://github.com/hengtaoshi/VulnGuard/releases/download/v0.6.0/gitleaks${IS_WIN ? ".exe" : ".linux"}`,
-    filename: IS_WIN ? "gitleaks.exe" : "gitleaks",
-  },
-  trivy: {
-    label: "Trivy",
-    type: "binary",
-    url: `https://github.com/hengtaoshi/VulnGuard/releases/download/v0.6.0/trivy${IS_WIN ? ".exe" : ".linux"}`,
-    filename: IS_WIN ? "trivy.exe" : "trivy",
-  },
-  nuclei: {
-    label: "Nuclei",
-    type: "binary",
-    url: `https://github.com/hengtaoshi/VulnGuard/releases/download/v0.6.0/nuclei${IS_WIN ? ".exe" : ".linux"}`,
-    filename: IS_WIN ? "nuclei.exe" : "nuclei",
-  },
-  trufflehog: {
-    label: "TruffleHog",
-    type: "binary",
-    url: `https://github.com/hengtaoshi/VulnGuard/releases/download/v0.6.0/trufflehog${IS_WIN ? ".exe" : ".linux"}`,
-    filename: IS_WIN ? "trufflehog.exe" : "trufflehog",
-  },
-  "osv-scanner": {
-    label: "OSV-Scanner",
-    type: "binary",
-    url: `https://github.com/hengtaoshi/VulnGuard/releases/download/v0.6.0/osv-scanner${IS_WIN ? ".exe" : ".linux"}`,
-    filename: IS_WIN ? "osv-scanner.exe" : "osv-scanner",
-  },
-  scorecard: {
-    label: "OpenSSF Scorecard",
-    type: "binary",
-    url: `https://github.com/hengtaoshi/VulnGuard/releases/download/v0.6.0/scorecard${IS_WIN ? ".exe" : ".linux"}`,
-    filename: IS_WIN ? "scorecard.exe" : "scorecard",
-  },
-  semgrep: {
-    label: "Semgrep",
-    type: "binary",
-    url: `https://github.com/hengtaoshi/VulnGuard/releases/download/v0.6.0/semgrep${IS_WIN ? ".exe" : ".linux"}`,
-    filename: IS_WIN ? "semgrep.exe" : "semgrep",
-  },
-  bandit: {
-    label: "Bandit",
-    type: "binary",
-    url: `https://github.com/hengtaoshi/VulnGuard/releases/download/v0.6.0/bandit${IS_WIN ? ".exe" : ".linux"}`,
-    filename: IS_WIN ? "bandit.exe" : "bandit",
-  },
-  checkov: {
-    label: "Checkov",
-    type: "pip",
-    pkg: "checkov",
-  },
-  "pip-audit": {
-    label: "pip-audit",
-    type: "binary",
-    url: `https://github.com/hengtaoshi/VulnGuard/releases/download/v0.6.0/pip-audit${IS_WIN ? ".exe" : ".linux"}`,
-    filename: IS_WIN ? "pip-audit.exe" : "pip-audit",
-  },
-  "dependency-check": {
-    label: "Dependency-Check",
-    type: "zip-extract",
-    url: `https://github.com/hengtaoshi/VulnGuard/releases/download/v0.6.0/dependency-check.zip`,
-    destDir: "dependency-check",
-  },
-  codeql: {
-    label: "CodeQL",
-    type: "zip-extract",
-    url: `https://github.com/hengtaoshi/VulnGuard/releases/download/v0.6.0/codeql${IS_WIN ? ".zip" : ".linux.zip"}`,
-    destDir: "codeql",
-    extractFilter: (entry) => entry.includes("codeql/codeql" + (IS_WIN ? ".exe" : "")),
-  },
-}
+// All scanners provided by the bundle
+const BUNDLED_SCANNERS = [
+  "gitleaks", "trivy", "nuclei", "trufflehog", "osv-scanner", "scorecard",
+  "semgrep", "bandit", "checkov", "pip-audit",
+  "dependency-check", "codeql",
+]
 
-// --- Proxy-aware request ---------------------------------------------------
+// Marker file written after successful extraction
+const MARKER = ".archive-extracted"
 
-/**
- * Apply proxy settings from settings.json to environment variables.
- * Reads proxy config from the app's persistent settings file.
- */
+// ─── Proxy helpers (unchanged) ────────────────────────────────────────────────
+
 function applyProxyFromEnv() {
   if (!DATA_DIR) return
   try {
     const settingsPath = join(DATA_DIR, "settings.json")
     if (!existsSync(settingsPath)) return
-
     const raw = readFileSync(settingsPath, "utf-8")
     const settings = JSON.parse(raw)
-
     if (settings.proxyEnabled) {
       if (settings.httpProxy) process.env.HTTP_PROXY = settings.httpProxy
       if (settings.httpsProxy) process.env.HTTPS_PROXY = settings.httpsProxy
@@ -116,17 +44,11 @@ function applyProxyFromEnv() {
   } catch { /* best effort */ }
 }
 
-/**
- * Get proxy agent URL from environment for the given target URL.
- * Returns { hostname, port, protocol } or null.
- */
 function getProxyForUrl(targetUrl) {
   const httpsProxy = process.env.HTTPS_PROXY || process.env.https_proxy || ""
   const httpProxy = process.env.HTTP_PROXY || process.env.http_proxy || ""
-
   const proxyUrl = targetUrl.startsWith("https") ? httpsProxy : httpProxy
   if (!proxyUrl) return null
-
   try {
     const parsed = new URL(proxyUrl)
     return {
@@ -135,15 +57,9 @@ function getProxyForUrl(targetUrl) {
       protocol: parsed.protocol.replace(":", ""),
       auth: parsed.username ? `${parsed.username}:${parsed.password}` : null,
     }
-  } catch {
-    return null
-  }
+  } catch { return null }
 }
 
-/**
- * Make an HTTP(S) request, optionally through a proxy (CONNECT tunnel).
- * Returns the response object. Retries on transient errors.
- */
 function makeRequest(urlStr, timeout = 120000, retries = 2) {
   return _makeRequest(urlStr, timeout, retries)
 }
@@ -152,346 +68,221 @@ function _makeRequest(urlStr, timeout = 120000, retries = 2) {
   return new Promise((resolve, reject) => {
     const targetUrl = new URL(urlStr)
     const proxy = getProxyForUrl(urlStr)
-
     const options = {
       hostname: proxy ? proxy.hostname : targetUrl.hostname,
       port: proxy ? proxy.port : (targetUrl.port || (targetUrl.protocol === "https:" ? 443 : 80)),
-      timeout,
-      headers: {},
+      timeout, headers: {},
     }
-
     if (proxy) {
-      // Tunnel through proxy
       if (targetUrl.protocol === "https:") {
         options.method = "CONNECT"
         options.path = `${targetUrl.hostname}:${targetUrl.port || 443}`
-        if (proxy.auth) {
-          options.headers["Proxy-Authorization"] = "Basic " + Buffer.from(proxy.auth).toString("base64")
-        }
-
+        if (proxy.auth) options.headers["Proxy-Authorization"] = "Basic " + Buffer.from(proxy.auth).toString("base64")
         const proxyReq = http.request(options)
         proxyReq.on("connect", (res, tunnelSocket) => {
-          if (res.statusCode !== 200) {
-            reject(new Error(`Proxy CONNECT failed: HTTP ${res.statusCode}`))
-            return
-          }
-          // Tunnel established — now make the real HTTPS request through the tunnel
-          const realReq = https.request({
-            hostname: targetUrl.hostname,
-            port: targetUrl.port || 443,
-            path: targetUrl.pathname + targetUrl.search,
-            method: "GET",
-            socket: tunnelSocket,
-            agent: false,
-            timeout,
-          })
-          realReq.on("response", resolve)
-          realReq.on("error", reject)
-          realReq.on("timeout", () => { realReq.destroy(); reject(new Error("Request timeout")) })
-          realReq.end()
+          if (res.statusCode !== 200) { reject(new Error(`Proxy CONNECT failed: HTTP ${res.statusCode}`)); return }
+          const realReq = https.request({ hostname: targetUrl.hostname, port: targetUrl.port || 443, path: targetUrl.pathname + targetUrl.search, method: "GET", socket: tunnelSocket, agent: false, timeout })
+          realReq.on("response", resolve); realReq.on("error", reject)
+          realReq.on("timeout", () => { realReq.destroy(); reject(new Error("Request timeout")) }); realReq.end()
         })
-        proxyReq.on("error", reject)
-        proxyReq.on("timeout", () => { proxyReq.destroy(); reject(new Error("Proxy connect timeout")) })
-        proxyReq.end()
+        proxyReq.on("error", reject); proxyReq.on("timeout", () => { proxyReq.destroy(); reject(new Error("Proxy connect timeout")) }); proxyReq.end()
       } else {
-        // HTTP through proxy
-        options.method = "GET"
-        options.path = urlStr
-        options.hostname = proxy.hostname
-        options.port = proxy.port
-        if (proxy.auth) {
-          options.headers["Proxy-Authorization"] = "Basic " + Buffer.from(proxy.auth).toString("base64")
-        }
-        const req = http.request(options, resolve)
-        req.on("error", reject)
-        req.on("timeout", () => { req.destroy(); reject(new Error("Request timeout")) })
-        req.end()
+        options.method = "GET"; options.path = urlStr; options.hostname = proxy.hostname; options.port = proxy.port
+        if (proxy.auth) options.headers["Proxy-Authorization"] = "Basic " + Buffer.from(proxy.auth).toString("base64")
+        const req = http.request(options, resolve); req.on("error", reject); req.on("timeout", () => { req.destroy(); reject(new Error("Request timeout")) }); req.end()
       }
     } else {
-      // Direct connection
-      options.method = "GET"
-      options.path = targetUrl.pathname + targetUrl.search
-      if (targetUrl.protocol === "https:") {
-        options.rejectUnauthorized = true
-        const req = https.request(options, resolve)
-        req.on("error", reject)
-        req.on("timeout", () => { req.destroy(); reject(new Error("Request timeout")) })
-        req.end()
-      } else {
-        const req = http.request(options, resolve)
-        req.on("error", reject)
-        req.on("timeout", () => { req.destroy(); reject(new Error("Request timeout")) })
-        req.end()
-      }
+      options.method = "GET"; options.path = targetUrl.pathname + targetUrl.search
+      const mod = targetUrl.protocol === "https:" ? https : http
+      const req = mod.request(options, resolve); req.on("error", reject); req.on("timeout", () => { req.destroy(); reject(new Error("Request timeout")) }); req.end()
     }
-  })
-  .catch((err) => {
-    // 对 ECONNRESET、ETIMEDOUT 等临时错误自动重试
-    if (retries > 0 && (
-      err.code === "ECONNRESET" || err.code === "ETIMEDOUT" ||
-      err.message?.includes("timeout") || err.message?.includes("econnreset")
-    )) {
+  }).catch((err) => {
+    if (retries > 0 && (err.code === "ECONNRESET" || err.code === "ETIMEDOUT" || err.message?.includes("timeout") || err.message?.includes("econnreset"))) {
       console.log(`[scanner] Retrying (${retries} left) after: ${err.code || err.message}`)
-      return new Promise((resolve) => setTimeout(resolve, 1000))
-        .then(() => _makeRequest(urlStr, timeout, retries - 1))
+      return new Promise((r) => setTimeout(r, 1000)).then(() => _makeRequest(urlStr, timeout, retries - 1))
     }
     throw err
   })
 }
 
-// --- Progress Reporter -----------------------------------------------------
+// ─── Progress Reporter ────────────────────────────────────────────────────────
 
 class ProgressReporter {
   constructor(sendProgress) {
-    this._send = sendProgress
-    this._last = 0
-    this._maxPercent = 0 // never decrease
+    this._send = sendProgress; this._last = 0; this._maxPercent = 0
   }
-
   update(downloaded, total) {
     const pct = total > 0 ? Math.round((downloaded / total) * 100) : 0
     if (Math.abs(pct - this._last) >= 2 || pct === 100) {
-      this._maxPercent = Math.max(this._maxPercent, pct)
-      this._last = this._maxPercent
+      this._maxPercent = Math.max(this._maxPercent, pct); this._last = this._maxPercent
       this._send({ percent: this._maxPercent, bytes: downloaded, total })
     }
   }
-
-  done() {
-    this._send({ percent: 100, bytes: 0, total: 0, done: true })
-  }
-
-  error(msg) {
-    this._send({ percent: 0, bytes: 0, total: 0, error: msg })
-  }
+  done() { this._send({ percent: 100, bytes: 0, total: 0, done: true }) }
+  error(msg) { this._send({ percent: 0, bytes: 0, total: 0, error: msg }) }
 }
 
-// --- Download helpers ------------------------------------------------------
+// ─── File helpers ─────────────────────────────────────────────────────────────
 
 function downloadFile(url, dest, reporter) {
   return new Promise((resolve, reject) => {
-    makeRequest(url)
-      .then((res) => {
-        // Follow redirects
-        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          res.resume()
-          return downloadFile(res.headers.location, dest, reporter).then(resolve).catch(reject)
-        }
-        if (res.statusCode !== 200) {
-          res.resume()
-          return reject(new Error(`HTTP ${res.statusCode}`))
-        }
-
-        const total = parseInt(res.headers["content-length"] || "0", 10)
-        let downloaded = 0
-        const file = createWriteStream(dest)
-
-        res.on("data", (chunk) => {
-          downloaded += chunk.length
-          reporter.update(downloaded, total)
-        })
-
-        res.pipe(file)
-        file.on("finish", () => {
-          file.close()
-          reporter.done()
-          resolve()
-        })
-        file.on("error", (err) => {
-          file.close()
-          try { unlinkSync(dest) } catch {}
-          reject(err)
-        })
-      })
-      .catch(reject)
-  })
-}
-
-function extractZip(zipPath, destDir, filter) {
-  return new Promise((resolve, reject) => {
-    try {
-      // 安全检测：列出 ZIP 条目，检查路径穿越攻击
-      if (IS_WIN) {
-        const entries = execSync(`tar -tf "${zipPath}"`, { stdio: "pipe", timeout: 30000 }).toString().split("\n")
-        for (const entry of entries) {
-          const trimmed = entry.trim()
-          if (trimmed.includes("..") || trimmed.startsWith("/") || trimmed.startsWith("\\")) {
-            throw new Error(`Path traversal detected in archive: ${trimmed}`)
-          }
-        }
-        execSync(`tar -xf "${zipPath}" -C "${destDir}" 2>nul`, { stdio: "pipe", timeout: 60000 })
-      } else {
-        // Linux: unzip -l 检查，并用 -x 排除危险路径
-        const listing = execSync(`unzip -l "${zipPath}" 2>/dev/null`, { stdio: "pipe", timeout: 30000 }).toString()
-        if (listing.includes("..")) {
-          throw new Error("Path traversal detected in archive")
-        }
-        execSync(`unzip -o "${zipPath}" -d "${destDir}" 2>/dev/null`, { stdio: "pipe", timeout: 60000 })
+    makeRequest(url).then((res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        res.resume(); return downloadFile(res.headers.location, dest, reporter).then(resolve).catch(reject)
       }
-      try { unlinkSync(zipPath) } catch {}
-      resolve()
-    } catch (err) {
-      try { unlinkSync(zipPath) } catch {}
-      reject(err)
-    }
+      if (res.statusCode !== 200) { res.resume(); return reject(new Error(`HTTP ${res.statusCode}`)) }
+      const total = parseInt(res.headers["content-length"] || "0", 10)
+      let downloaded = 0
+      const file = createWriteStream(dest)
+      res.on("data", (chunk) => { downloaded += chunk.length; reporter.update(downloaded, total) })
+      res.pipe(file)
+      file.on("finish", () => { file.close(); reporter.done(); resolve() })
+      file.on("error", (err) => { file.close(); try { unlinkSync(dest) } catch {}; reject(err) })
+    }).catch(reject)
   })
 }
 
-/**
- * 验证下载的二进制文件是有效的 PE 可执行文件（Windows）
- */
 function verifyBinary(filePath) {
   try {
     if (!existsSync(filePath)) return false
     const size = statSync(filePath).size
-    if (size < 1000) return false // 太小的文件肯定不对
-    // Windows: 检查 MZ 头部
+    if (size < 1000) return false
     if (IS_WIN) {
       const buf = Buffer.alloc(2)
       const fd = openSync(filePath, 'r')
-      readSync(fd, buf, 0, 2, 0)
-      closeSync(fd)
-      if (buf[0] !== 0x4D || buf[1] !== 0x5A) {
-        throw new Error(`Invalid PE executable: missing MZ header`)
-      }
+      readSync(fd, buf, 0, 2, 0); closeSync(fd)
+      if (buf[0] !== 0x4D || buf[1] !== 0x5A) throw new Error(`Invalid PE executable: missing MZ header`)
     }
     return true
-  } catch {
-    return false
-  }
+  } catch { return false }
 }
 
-// --- Scanner installers ----------------------------------------------------
+// ─── Archive download + extract ───────────────────────────────────────────────
 
-async function installBinaryScanner(def, binDir, reporter) {
-  const dest = join(binDir, def.filename)
-  if (existsSync(dest)) {
-    reporter.update(100, 100)
-    reporter.done()
-    return { ok: true, skipped: true }
-  }
+async function ensureArchiveExtracted(toolsDir, sendProgress) {
+  const markerFile = join(toolsDir, MARKER)
+  if (existsSync(markerFile)) return { ok: true, skipped: true }
 
-  reporter.update(0, 100)
-  await downloadFile(def.url, dest + ".download", reporter)
-  // Rename after download complete
-  try { unlinkSync(dest) } catch {}
-  const { renameSync } = require("fs")
-  renameSync(dest + ".download", dest)
-  if (!IS_WIN) {
-    execSync(`chmod +x "${dest}"`, { stdio: "pipe" })
-  }
-  // 验证下载的二进制是有效的可执行文件
-  if (!verifyBinary(dest)) {
-    try { unlinkSync(dest) } catch {}
-    return { ok: false, error: "下载的二进制文件无效或已损坏" }
-  }
-  return { ok: true }
-}
-
-async function installPipScanner(def, reporter) {
-  const pip = IS_WIN ? "pip" : "pip3"
-  // Check if already installed
-  try {
-    execSync(`${pip} show ${def.pkg} >nul 2>&1`, { stdio: "pipe", timeout: 10000 })
-    reporter.update(100, 100)
-    reporter.done()
-    return { ok: true, skipped: true }
-  } catch {} // not installed, proceed
-
-  reporter.update(0, 100)
-  const progressInterval = setInterval(() => {
-    reporter.update(50, 100)
-  }, 2000)
+  console.log(`[scanner] Downloading scanner bundle from ${ARCHIVE_URL}`)
+  applyProxyFromEnv()
+  const reporter = new ProgressReporter(sendProgress)
+  const tmp = join(toolsDir, "scanners.tar.gz.download")
 
   try {
-    execSync(`${pip} install ${def.pkg} 2>&1`, { timeout: 300000, stdio: "pipe" })
-    clearInterval(progressInterval)
-    reporter.update(100, 100)
+    if (!existsSync(toolsDir)) mkdirSync(toolsDir, { recursive: true })
+
+    // Download the single archive
+    await downloadFile(ARCHIVE_URL, tmp, reporter)
+
+    // Verify archive size
+    reporter.update(95, 100)
+    const stat = statSync(tmp)
+    if (stat.size < 1000000) throw new Error(`Downloaded archive too small: ${stat.size} bytes`)
+
+    // Path traversal protection: check all archive entries before extracting
+    const entries = execSync(`tar -tf "${tmp}"`, { stdio: "pipe", timeout: 30000 }).toString().split("\n")
+    for (const entry of entries) {
+      const trimmed = entry.trim()
+      if (trimmed.includes("..") || trimmed.startsWith("/") || trimmed.startsWith("\\")) {
+        throw new Error(`Path traversal detected in archive: ${trimmed}`)
+      }
+    }
+
+    // Extract to toolsDir — archive has bin/ codeql/ dependency-check/ at root
+    execSync(`tar -xzf "${tmp}" -C "${toolsDir}"`, { stdio: "pipe", timeout: 300000 })
+    try { unlinkSync(tmp) } catch {}
+
+    // Verify critical binaries
+    const binDir = join(toolsDir, "bin")
+    const critical = ["gitleaks.exe", "nuclei.exe", "trivy.exe"]
+    for (const exe of critical) {
+      const p = join(binDir, exe)
+      if (!existsSync(p)) throw new Error(`Missing critical binary: ${exe}`)
+      if (!verifyBinary(p)) throw new Error(`Invalid binary: ${exe}`)
+    }
+
+    // Set +x on Linux
+    if (!IS_WIN) {
+      execSync(`chmod +x "${join(binDir, "*")}"`, { stdio: "pipe" })
+      // Also handle codeql and dependency-check scripts
+      for (const dir of ["codeql", "dependency-check"]) {
+        const d = join(toolsDir, dir)
+        if (existsSync(d)) execSync(`find "${d}" -type f -exec chmod +x {} \\; 2>/dev/null`, { stdio: "pipe" })
+      }
+    }
+
+    // Write marker
+    writeFileSync(markerFile, new Date().toISOString())
+    console.log(`[scanner] Bundle extracted to ${toolsDir}`)
     reporter.done()
     return { ok: true }
   } catch (err) {
-    clearInterval(progressInterval)
+    try { unlinkSync(tmp) } catch {}
+    // Clean up partially extracted files so retry starts fresh
+    for (const dir of ["bin", "codeql", "dependency-check"]) {
+      const p = join(toolsDir, dir)
+      try { rmSync(p, { recursive: true, force: true }) } catch {}
+    }
+    try { unlinkSync(join(toolsDir, MARKER)) } catch {}
     reporter.error(err.message)
     return { ok: false, error: err.message }
   }
 }
 
-async function installZipExtractScanner(def, binDir, reporter) {
-  if (def.destDir === "dependency-check") {
-    const dcDir = join(dirname(binDir), "dependency-check")
-    const dcBat = join(dcDir, "bin", "dependency-check.bat")
-    const dcSh = join(dcDir, "bin", "dependency-check.sh")
-    if (existsSync(dcBat) || existsSync(dcSh)) {
-      reporter.done()
-      return { ok: true, skipped: true }
-    }
+// ─── Scanner existence check ──────────────────────────────────────────────────
+
+function getScannerPath(name, toolsDir) {
+  const binDir = join(toolsDir, "bin")
+  switch (name) {
+    case "gitleaks": case "trivy": case "nuclei": case "trufflehog":
+    case "osv-scanner": case "scorecard": case "semgrep":
+    case "bandit": case "checkov": case "pip-audit":
+      return join(binDir, name + ".exe")
+    case "dependency-check":
+      return join(toolsDir, "dependency-check", "bin", IS_WIN ? "dependency-check.bat" : "dependency-check.sh")
+    case "codeql":
+      return join(toolsDir, "codeql", "codeql", "codeql" + (IS_WIN ? ".exe" : ""))
+    default:
+      return null
+  }
+}
+
+function isScannerInstalled(name, toolsDir) {
+  const p = getScannerPath(name, toolsDir)
+  return p ? existsSync(p) : false
+}
+
+// ─── Public API ───────────────────────────────────────────────────────────────
+
+async function installScanner(name, toolsDir, sendProgress) {
+  if (!BUNDLED_SCANNERS.includes(name)) {
+    return { ok: false, error: `Unknown scanner: ${name}` }
   }
 
-  reporter.update(0, 100)
-  const tmp = join(binDir, "download")
-  const ext = def.url.endsWith(".zip") ? ".zip" : ".tar.gz"
-  await downloadFile(def.url, tmp + ext, reporter)
-
-  reporter.update(90, 100)
-  const destDir = join(dirname(binDir), def.destDir)
-  if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true })
-
-  if (ext === ".zip") {
-    await extractZip(tmp + ext, destDir, def.extractFilter)
-  } else {
-    execSync(`tar -xzf "${tmp + ext}" -C "${destDir}" 2>/dev/null`, { stdio: "pipe", timeout: 120000 })
-    try { unlinkSync(tmp + ext) } catch {}
+  // Check if already installed
+  if (isScannerInstalled(name, toolsDir) && existsSync(join(toolsDir, MARKER))) {
+    if (sendProgress) sendProgress({ percent: 100, done: true, skipped: true })
+    return { ok: true, skipped: true }
   }
 
-  reporter.done()
+  // Download + extract the bundle
+  const result = await ensureArchiveExtracted(toolsDir, sendProgress)
+  if (!result.ok) return result
+
+  // Final verification
+  if (!isScannerInstalled(name, toolsDir)) {
+    return { ok: false, error: `Scanner '${name}' not found in extracted bundle` }
+  }
+
   return { ok: true }
 }
 
-// --- Public API ------------------------------------------------------------
-
-async function installScanner(name, toolsDir, sendProgress) {
-  const def = SCANNER_DEFS[name]
-  if (!def) return { ok: false, error: `Unknown scanner: ${name}` }
-
-  // Apply proxy settings before every install attempt
-  applyProxyFromEnv()
-  // Debug: log proxy status
-  const hasProxy = !!(process.env.HTTPS_PROXY || process.env.https_proxy)
-  console.log(`[scanner] Installing ${name}, proxy: ${hasProxy ? process.env.HTTPS_PROXY || process.env.https_proxy : 'NONE'}`)
-
-  const reporter = new ProgressReporter(sendProgress)
-  const binDir = join(toolsDir, "bin")
-
-  try {
-    if (!existsSync(binDir)) mkdirSync(binDir, { recursive: true })
-
-    let result
-    switch (def.type) {
-      case "binary":
-        result = await installBinaryScanner(def, binDir, reporter)
-        break
-      case "pip":
-        result = await installPipScanner(def, reporter)
-        break
-      case "zip-extract":
-        result = await installZipExtractScanner(def, binDir, reporter)
-        break
-      default:
-        result = { ok: false, error: `Unknown type: ${def.type}` }
-    }
-    return result
-  } catch (err) {
-    reporter.error(err.message)
-    return { ok: false, error: err.message }
-  }
-}
-
 function getScannerInfo(name) {
-  return SCANNER_DEFS[name] || null
+  return BUNDLED_SCANNERS.includes(name) ? { name, bundled: true } : null
 }
 
 function getRegisteredScanners() {
-  return Object.keys(SCANNER_DEFS)
+  return [...BUNDLED_SCANNERS]
 }
 
 module.exports = { installScanner, getScannerInfo, getRegisteredScanners }

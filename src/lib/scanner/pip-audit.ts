@@ -1,6 +1,8 @@
 import { execAsync } from "./exec"
+import { join } from "path"
 import type { Vulnerability } from "@/lib/api/types"
 import type { ScanResult } from "./types"
+import { TOOLS_BIN } from "./paths"
 
 function severityFromScore(score?: number): "Critical" | "High" | "Medium" | "Low" {
   if (!score) return "Medium"
@@ -10,10 +12,12 @@ function severityFromScore(score?: number): "Critical" | "High" | "Medium" | "Lo
   return "Low"
 }
 
+const PIPAUDIT_PATH = join(TOOLS_BIN, "pip-audit.exe")
+
 function isAvailable(): boolean {
   try {
     const { execSync } = require("child_process")
-    execSync("pip-audit --version", { stdio: "pipe", timeout: 5000 })
+    execSync(`"${PIPAUDIT_PATH}" --version`, { stdio: "pipe", timeout: 5000 })
     return true
   } catch {
     return false
@@ -37,7 +41,7 @@ export async function runPipAuditScan(targetPath: string): Promise<ScanResult> {
     let stdout = ""
     try {
       const r = await execAsync(
-        `pip-audit --requirement "${requirementsPath.replace(/\\/g, "/")}" --format=json`,
+        `"${PIPAUDIT_PATH}" --requirement "${requirementsPath.replace(/\\/g, "/")}" --format=json`,
         { timeout: 60000, maxBuffer: 10 * 1024 * 1024 },
       )
       stdout = r.stdout

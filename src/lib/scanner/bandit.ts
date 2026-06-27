@@ -1,6 +1,8 @@
 import { execAsync } from "./exec"
+import { join } from "path"
 import type { Vulnerability } from "@/lib/api/types"
 import type { ScanResult } from "./types"
+import { TOOLS_BIN } from "./paths"
 
 interface BanditResult {
   results: {
@@ -26,10 +28,12 @@ function severityMap(sev: string): "Critical" | "High" | "Medium" | "Low" {
   }
 }
 
+const BANDIT_PATH = join(TOOLS_BIN, "bandit.exe")
+
 function isAvailable(): boolean {
   try {
     const { execSync } = require("child_process")
-    execSync("bandit --version", { stdio: "pipe", timeout: 5000 })
+    execSync(`"${BANDIT_PATH}" --version`, { stdio: "pipe", timeout: 5000 })
     return true
   } catch {
     return false
@@ -74,7 +78,7 @@ export async function runBanditScan(targetPath: string): Promise<ScanResult> {
 
   try {
     const { stdout } = await execAsync(
-      `bandit -r "${targetPath.replace(/\\/g, "/")}" -f json --quiet`,
+      `"${BANDIT_PATH}" -r "${targetPath.replace(/\\/g, "/")}" -f json --quiet`,
       { timeout: 120000, maxBuffer: 10 * 1024 * 1024 },
     )
 

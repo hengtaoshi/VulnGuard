@@ -13,8 +13,9 @@ import { join } from "path"
 import { existsSync } from "fs"
 import type { Vulnerability } from "@/lib/api/types"
 import type { ScanResult } from "./types"
+import { TOOLS_BIN } from "./paths"
 
-const SCORECARD_PATH = join(process.cwd(), "tools", "bin", "scorecard.exe")
+const SCORECARD_PATH = join(TOOLS_BIN, "scorecard.exe")
 
 function isAvailable(): boolean {
   return existsSync(SCORECARD_PATH)

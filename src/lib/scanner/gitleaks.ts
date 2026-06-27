@@ -3,6 +3,7 @@ import { join, resolve, dirname } from "path"
 import { writeFileSync, unlinkSync, existsSync } from "fs"
 import type { Vulnerability } from "@/lib/api/types"
 import type { ScanResult } from "./types"
+import { TOOLS_BIN } from "./paths"
 
 interface GitleaksFinding {
   Description: string
@@ -24,7 +25,7 @@ interface GitleaksFinding {
   Fingerprint: string
 }
 
-const GITLEAKS_PATH = join(process.cwd(), "tools", "bin", "gitleaks.exe")
+const GITLEAKS_PATH = join(TOOLS_BIN, "gitleaks.exe")
 
 function isAvailable(): boolean {
   try {
