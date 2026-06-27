@@ -147,8 +147,8 @@ function main() {
   log("[7/7] Packaging desktop application...")
 
   const buildCmd = target
-    ? `npx electron-builder ${target} --config electron-builder.yml`
-    : `npx electron-builder --config electron-builder.yml`
+    ? `npx electron-builder ${target} --config electron-builder.yml --publish=never`
+    : `npx electron-builder --config electron-builder.yml --publish=never`
 
   try {
     // Electron-builder 打包 NSIS 可能很久，禁用超时
