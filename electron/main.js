@@ -467,8 +467,16 @@ function createWindow() {
     // Silent update check after 5s — banner will show in renderer if available
     if (!IS_DEV) {
       setTimeout(async () => {
-        try { await autoUpdater.checkForUpdates() }
-        catch (e) { console.error("[auto-updater] check failed:", e.message) }
+        try {
+          console.log("[auto-updater] checking for updates...")
+          console.log("[auto-updater] proxy:", process.env.HTTPS_PROXY || process.env.https_proxy || "NONE")
+          applyProxyFromSettings()
+          const result = await autoUpdater.checkForUpdates()
+          console.log("[auto-updater] check result:", result?.updateInfo?.version)
+        } catch (e) {
+          console.error("[auto-updater] check failed:", e.message || e)
+          console.error("[auto-updater] check failed stack:", e.stack?.slice(0, 300))
+        }
       }, 5000)
     }
   })
