@@ -20,6 +20,16 @@ Follow SemVer (`MAJOR.MINOR.PATCH`):
 - **Patch**: Bug fixes, perf improvements (backward-compatible)
 - Never overwrite a published release. Each release = one Git tag (`vX.Y.Z`).
 
+**Release workflow order (strict)**:
+1. Update `version` in `package.json`
+2. Commit the version bump
+3. `git push origin master`
+4. `git tag vX.Y.Z`
+5. `git push origin vX.Y.Z`
+6. Wait for CI build to finish
+
+⛔ Never push a tag before the version bump commit. The CI reads `package.json` from the tagged commit - if the version wasn't bumped first, it builds with the wrong version.
+
 ## Commands
 
 ```bash
