@@ -4,15 +4,8 @@
 # 也可通过 workflow_dispatch 手动触发构建测试。
 #
 # 用法:
-#   git tag v0.3.2
-#   git push origin v0.3.2
-#
-# 流程:
-#   1. 检出代码
-#   2. 安装 Node.js 依赖 (npm ci)
-#   3. 准备 electron-bin (从 node_modules 复制)
-#   4. build-electron.js 自动执行: 清理 → next build → 复制静态资源 → electron-builder 打包
-#   5. 上传到 GitHub Releases
+#   git tag v0.6.21
+#   git push origin v0.6.21
 
 name: Build & Release
 
@@ -40,14 +33,23 @@ jobs:
           node-version: '22'
           cache: 'npm'
 
+      # ── 缓存 node_modules（比只缓存 npm 更快） ──
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            node-modules-${{ runner.os }}-
+
       - name: Cache Next.js build
         uses: actions/cache@v4
         with:
           path: .next/cache
-          key: next-build-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**', 'public/**') }}
+          key: next-cache-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**', 'public/**') }}
           restore-keys: |
-            next-build-${{ hashFiles('package-lock.json') }}-
-            next-build-
+            next-cache-${{ runner.os }}-
+            next-cache-
 
       - name: Cache Electron binary
         uses: actions/cache@v4
@@ -66,15 +68,13 @@ jobs:
         shell: bash
         run: |
           if [ -d "electron-bin" ] && [ -f "electron-bin/electron.exe" ]; then
-            echo "✓ electron-bin cache hit ($(ls electron-bin/ | wc -l) files)"
+            echo "✓ electron-bin cache hit"
           else
             echo "Ensuring electron binary is downloaded..."
             node node_modules/electron/install.js
-            echo ""
-            echo "Copying electron from node_modules/electron/dist/ to electron-bin/"
             mkdir -p electron-bin
             cp -r node_modules/electron/dist/* electron-bin/
-            echo "✓ electron-bin ready ($(ls electron-bin/ | wc -l) files)"
+            echo "✓ electron-bin ready"
           fi
 
       # build-electron.js 执行完整流程:
@@ -100,7 +100,6 @@ jobs:
             Write-Host "  (none - release/ directory not found)"
           }
 
-      # 先清理已存在的 release（防止重跑 tag 时冲突）
       - name: Clean up existing release
         if: startsWith(github.ref, 'refs/tags/')
         env:
@@ -111,7 +110,6 @@ jobs:
           if gh release view "$TAG" --json id &>/dev/null 2>&1; then
             echo "Release $TAG already exists — deleting and recreating"
             gh release delete "$TAG" --yes 2>/dev/null || true
-            # gh release delete 默认不删 tag，但 action 需要 tag 存在
           else
             echo "No existing release for $TAG — creating fresh"
           fi
