@@ -33,7 +33,9 @@ interface InstallContextValue {
   /** Update installation progress (called by SetupWizard) */
   _updateProgress: (pct: number) => void
   /** Mark a scanner as completed/failed */
-  _markDone: (name: string, ok: boolean) => void
+  _markDone: (name: string, ok: boolean, errorMsg?: string) => void
+  /** Error details per failed scanner */
+  failedErrors: Record<string, string>
 }
 
 const InstallContext = createContext<InstallContextValue | null>(null)
@@ -98,7 +100,7 @@ function CircularProgressBall({ percent, onClick, done, error }: {
 
 function InstallDetailOverlay({
   displayPct, currentLabel, doneCount, total,
-  error, completed, failed, onMinimize, onFinish,
+  error, completed, failed, failedErrors, onMinimize, onFinish,
 }: {
   displayPct: number
   currentLabel: string
@@ -107,6 +109,7 @@ function InstallDetailOverlay({
   error: string | null
   completed: string[]
   failed: string[]
+  failedErrors: Record<string, string>
   onMinimize: () => void
   onFinish: () => void
 }) {
@@ -166,9 +169,14 @@ function InstallDetailOverlay({
             </div>
           ))}
           {failed.map((name) => (
-            <div key={name} className="flex items-center gap-2 text-sm text-destructive">
-              <AlertCircle className="h-3.5 w-3.5" />
-              {name}
+            <div key={name} className="flex items-start gap-2 text-sm text-destructive">
+              <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+              <div>
+                <span>{name}</span>
+                {failedErrors[name] && (
+                  <p className="text-[10px] text-destructive/70 mt-0.5">{failedErrors[name]}</p>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -184,6 +192,7 @@ export function InstallProgressProvider({ children }: { children: ReactNode }) {
   const [displayPct, setDisplayPct] = useState(0)
   const [completed, setCompleted] = useState<string[]>([])
   const [failed, setFailed] = useState<string[]>([])
+  const [failedErrors, setFailedErrors] = useState<Record<string, string>>({})
   const [expanded, setExpanded] = useState(false)
   const [currentLabel, setCurrentLabel] = useState("")
   const [error, setError] = useState<string | null>(null)
@@ -194,20 +203,22 @@ export function InstallProgressProvider({ children }: { children: ReactNode }) {
     setDisplayPct(prev => Math.max(prev, pct))
   }, [])
 
-  const _markDone = useCallback((name: string, ok: boolean) => {
+  const _markDone = useCallback((name: string, ok: boolean, errorMsg?: string) => {
     if (ok) {
       setCompleted(prev => [...prev, name])
     } else {
       setFailed(prev => [...prev, name])
+      if (errorMsg) setFailedErrors(prev => ({ ...prev, [name]: errorMsg }))
     }
   }, [])
 
   const startInstall = useCallback((scannerNames: string[]) => {
     setInstalling(true)
-    setExpanded(false) // 默认最小化为悬浮球
+    setExpanded(false)
     setDisplayPct(0)
     setCompleted([])
     setFailed([])
+    setFailedErrors({})
     setError(null)
     setCurrentLabel("准备中...")
     setTotalScanners(scannerNames.length)
@@ -219,6 +230,7 @@ export function InstallProgressProvider({ children }: { children: ReactNode }) {
     setDisplayPct(0)
     setCompleted([])
     setFailed([])
+    setFailedErrors({})
     setExpanded(false)
     setError(null)
     setTotalScanners(0)
@@ -236,7 +248,7 @@ export function InstallProgressProvider({ children }: { children: ReactNode }) {
     <InstallContext.Provider value={{
       installing, displayPct, completed, failed, expanded,
       startInstall, setExpanded, reset,
-      _updateProgress, _markDone,
+      _updateProgress, _markDone, failedErrors,
     }}>
       {children}
 
@@ -258,6 +270,7 @@ export function InstallProgressProvider({ children }: { children: ReactNode }) {
               error={error}
               completed={completed}
               failed={failed}
+              failedErrors={failedErrors}
               onMinimize={() => setExpanded(false)}
               onFinish={reset}
             />

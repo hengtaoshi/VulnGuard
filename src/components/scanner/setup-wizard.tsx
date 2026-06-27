@@ -170,7 +170,7 @@ export function SetupWizard({ open, onFinish }: SetupWizardProps) {
         if (result?.ok) {
           _markDone(sc.displayName, true)
         } else {
-          _markDone(sc.displayName, false)
+          _markDone(sc.displayName, false, result?.error || "安装失败")
         }
       } else {
         // Web mode via SSE

@@ -439,6 +439,9 @@ async function installScanner(name, toolsDir, sendProgress) {
 
   // Apply proxy settings before every install attempt
   applyProxyFromEnv()
+  // Debug: log proxy status
+  const hasProxy = !!(process.env.HTTPS_PROXY || process.env.https_proxy)
+  console.log(`[scanner] Installing ${name}, proxy: ${hasProxy ? process.env.HTTPS_PROXY || process.env.https_proxy : 'NONE'}`)
 
   const reporter = new ProgressReporter(sendProgress)
   const binDir = join(toolsDir, "bin")
