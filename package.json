@@ -1,6 +1,6 @@
 {
   "name": "vulnguard",
-  "version": "0.6.21",
+  "version": "0.6.3",
   "private": true,
   "bin": {
     "vulnguard": "cli/vulnguard.mjs"
