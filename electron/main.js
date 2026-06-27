@@ -63,9 +63,11 @@ ipcMain.handle("get-data-dir", () => DATA_DIR)
 ipcMain.handle("get-scanner-status", () => {
   const scanEngineExe = path.join(SCAN_ENGINE_DIR, "scan-engine.exe")
   const scanEnginePy = path.join(SCAN_ENGINE_DIR, "scan-engine.py")
+  const archiveMarker = path.join(TOOLS_DIR, ".archive-extracted")
   return {
     scanEngine: fs.existsSync(scanEngineExe) || fs.existsSync(scanEnginePy),
     toolsDir: TOOLS_DIR,
+    archiveExtracted: fs.existsSync(archiveMarker),
   }
 })
 

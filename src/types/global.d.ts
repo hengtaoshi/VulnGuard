@@ -33,6 +33,7 @@ interface VulnguardResult {
 interface VulnguardStatus {
   scanEngine: boolean
   toolsDir: string
+  archiveExtracted?: boolean
 }
 
 interface Window {

@@ -81,11 +81,21 @@ export default function Dashboard() {
     return () => unsub()
   }, [])
 
-  // 首次启动检测：localStorage 标记未设置 → 弹出安装向导
-  // 适用于桌面版首次安装和 Web 版首次访问
+  // 启动检测：首次安装 或 升级后新扫描器系统未部署 → 弹出安装向导
   useEffect(() => {
     try {
       const onboarded = localStorage.getItem("vulnguard-onboarded")
+
+      // Electron 环境下额外检查归档是否已解压（兼容 v0.5.0 升级）
+      if (onboarded === "true" && typeof window !== "undefined" && window.vulnguard?.getScannerStatus) {
+        window.vulnguard.getScannerStatus().then((status) => {
+          if (!status.archiveExtracted) {
+            setShowWizard(true)
+          }
+        }).catch(() => {})
+        return
+      }
+
       if (onboarded !== "true") {
         setShowWizard(true)
       }
