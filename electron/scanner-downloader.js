@@ -142,9 +142,13 @@ function getProxyForUrl(targetUrl) {
 
 /**
  * Make an HTTP(S) request, optionally through a proxy (CONNECT tunnel).
- * Returns the response object.
+ * Returns the response object. Retries on transient errors.
  */
-function makeRequest(urlStr, timeout = 30000) {
+function makeRequest(urlStr, timeout = 120000, retries = 2) {
+  return _makeRequest(urlStr, timeout, retries)
+}
+
+function _makeRequest(urlStr, timeout = 120000, retries = 2) {
   return new Promise((resolve, reject) => {
     const targetUrl = new URL(urlStr)
     const proxy = getProxyForUrl(urlStr)
@@ -221,11 +225,19 @@ function makeRequest(urlStr, timeout = 30000) {
       }
     }
   })
+  .catch((err) => {
+    // 对 ECONNRESET、ETIMEDOUT 等临时错误自动重试
+    if (retries > 0 && (
+      err.code === "ECONNRESET" || err.code === "ETIMEDOUT" ||
+      err.message?.includes("timeout") || err.message?.includes("econnreset")
+    )) {
+      console.log(`[scanner] Retrying (${retries} left) after: ${err.code || err.message}`)
+      return new Promise((resolve) => setTimeout(resolve, 1000))
+        .then(() => _makeRequest(urlStr, timeout, retries - 1))
+    }
+    throw err
+  })
 }
-
-// --- Progress Reporter -----------------------------------------------------
-
-class ProgressReporter {
   constructor(sendProgress) {
     this._send = sendProgress
     this._last = 0
