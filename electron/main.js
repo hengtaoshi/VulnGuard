@@ -73,18 +73,24 @@ ipcMain.handle("get-scanner-status", () => {
 
 ipcMain.handle("download-scanner", async (_event, scannerName) => {
   try {
-    // Ensure the data dir is known to the downloader (for proxy settings lookup)
+    // 立即发送"开始连接"进度，让用户马上看到反馈
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("scanner-progress", { scanner: scannerName, percent: 0, bytes: 0, total: 0 })
+    }
+
+    // 新版代理设置路径直接指向 userData，不走用户登录后的缓存目录
     process.env.VULNGUARD_DATA_DIR = path.join(app.getPath("userData"))
     applyProxyFromSettings()
     const httpsProxy = process.env.HTTPS_PROXY || process.env.https_proxy
     console.log(`[scanner] Downloading ${scannerName}, proxy: ${httpsProxy || "NONE"}`)
+    const settingsFile = path.join(app.getPath("userData"), "settings.json")
     if (!httpsProxy) {
-      console.log(`[scanner] WARNING: No proxy configured! Settings path: ${path.join(DATA_DIR, "settings.json")}`)
+      console.log(`[scanner] WARNING: No proxy configured! Settings path: ${settingsFile}`)
       try {
-        const exists = require("fs").existsSync(path.join(DATA_DIR, "settings.json"))
+        const exists = require("fs").existsSync(settingsFile)
         console.log(`[scanner] settings.json exists: ${exists}`)
         if (exists) {
-          const raw = require("fs").readFileSync(path.join(DATA_DIR, "settings.json"), "utf-8")
+          const raw = require("fs").readFileSync(settingsFile, "utf-8")
           const s = JSON.parse(raw)
           console.log(`[scanner] proxyEnabled: ${s.proxyEnabled}, httpsProxy: ${s.httpsProxy}`)
         }
@@ -430,7 +436,7 @@ function detectSystemProxy() {
  */
 function applyProxyFromSettings() {
   try {
-    const settingsPath = path.join(DATA_DIR, "settings.json")
+    const settingsPath = path.join(app.getPath("userData"), "settings.json")
     if (!fs.existsSync(settingsPath)) {
       detectSystemProxy()
       return

@@ -27,6 +27,18 @@ import { useRouter } from "next/navigation"
 import { InstallDialog } from "@/components/scanner/install-dialog"
 import { SetupWizard } from "@/components/scanner/setup-wizard"
 
+/** 从 http://127.0.0.1:7897 中提取端口号 7897 */
+function extractPort(url: string): string {
+  if (!url) return ""
+  try {
+    const parsed = new URL(url)
+    return parsed.port || ""
+  } catch {
+    const m = url.match(/:(\d+)$/)
+    return m?.[1] || ""
+  }
+}
+
 const DEFAULT_SETTINGS: AppSettings = {
   maxDuration: 30,
   autoReport: true,
@@ -471,34 +483,36 @@ export default function SettingsPage() {
               <Toggle
                 id="proxyEnabled"
                 value={settings.proxyEnabled}
-                onChange={v => setSettings(s => ({ ...s, proxyEnabled: v }))}
+                onChange={v => setSettings(s => ({
+                  ...s,
+                  proxyEnabled: v,
+                  // 开启代理时自动填入默认端口
+                  httpProxy: v && !s.httpProxy ? "http://127.0.0.1:7897" : s.httpProxy,
+                  httpsProxy: v && !s.httpsProxy ? "http://127.0.0.1:7897" : s.httpsProxy,
+                }))}
               />
             </div>
             {settings.proxyEnabled && (
-              <>
-                <div>
-                  <p className="text-xs font-medium mb-1">{t("settings.httpProxy")}</p>
-                  <p className="text-[10px] text-muted-foreground mb-1.5">{t("settings.httpProxyDesc")}</p>
+              <div>
+                <p className="text-xs font-medium mb-1">{t("settings.httpProxy")}</p>
+                <p className="text-[10px] text-muted-foreground mb-1.5">{t("settings.httpProxyDesc")}</p>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground font-mono shrink-0">http://127.0.0.1:</span>
                   <Input
-                    type="text"
-                    value={settings.httpProxy}
-                    onChange={e => setSettings(s => ({ ...s, httpProxy: e.target.value }))}
-                    className="h-8 text-xs font-mono"
-                    placeholder="http://127.0.0.1:7897"
+                    type="number"
+                    min={1}
+                    max={65535}
+                    value={extractPort(settings.httpProxy) || 7897}
+                    onChange={e => {
+                      const port = e.target.value
+                      const url = port ? `http://127.0.0.1:${port}` : ""
+                      setSettings(s => ({ ...s, httpProxy: url, httpsProxy: url }))
+                    }}
+                    className="w-24 h-8 text-xs text-center font-mono"
+                    placeholder="7897"
                   />
                 </div>
-                <div>
-                  <p className="text-xs font-medium mb-1">{t("settings.httpsProxy")}</p>
-                  <p className="text-[10px] text-muted-foreground mb-1.5">{t("settings.httpsProxyDesc")}</p>
-                  <Input
-                    type="text"
-                    value={settings.httpsProxy}
-                    onChange={e => setSettings(s => ({ ...s, httpsProxy: e.target.value }))}
-                    className="h-8 text-xs font-mono"
-                    placeholder="http://127.0.0.1:7897"
-                  />
-                </div>
-              </>
+              </div>
             )}
           </CardContent>
         </Card>

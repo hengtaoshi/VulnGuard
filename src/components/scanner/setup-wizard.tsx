@@ -37,10 +37,9 @@ export function SetupWizard({ open, onFinish }: SetupWizardProps) {
   const [isElectron, setIsElectron] = useState(false)
   const abortRef = useRef(false)
 
-  // Proxy settings
+  // Proxy settings — store just the port
   const [proxyEnabled, setProxyEnabled] = useState(false)
-  const [httpProxy, setHttpProxy] = useState("http://127.0.0.1:7897")
-  const [httpsProxy, setHttpsProxy] = useState("http://127.0.0.1:7897")
+  const [proxyPort, setProxyPort] = useState("7897")
 
   const [step, setStep] = useState<"idle" | "installing" | "done">("idle")
 
@@ -50,21 +49,22 @@ export function SetupWizard({ open, onFinish }: SetupWizardProps) {
 
   const saveProxySettings = useCallback(async (): Promise<boolean> => {
     if (!proxyEnabled) return true
+    const url = proxyPort ? `http://127.0.0.1:${proxyPort}` : ""
     try {
       const res = await fetch("/api/settings", {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           proxyEnabled: true,
-          httpProxy: httpProxy || "",
-          httpsProxy: httpsProxy || "",
+          httpProxy: url,
+          httpsProxy: url,
         }),
       })
       return res.ok
     } catch {
       return false
     }
-  }, [proxyEnabled, httpProxy, httpsProxy])
+  }, [proxyEnabled, proxyPort])
 
   const handleInstall = useCallback(async () => {
     await saveProxySettings()
@@ -74,8 +74,12 @@ export function SetupWizard({ open, onFinish }: SetupWizardProps) {
 
     // 下载第一个扫描器 → 触发归档下载
     if (isElectron && window.vulnguard?.downloadScanner) {
+      let firstError: string | null = null
       const unsub = window.vulnguard.onScannerProgress((data: InstallProgress) => {
-        if (data.error) return
+        if (data.error) {
+          if (!firstError) firstError = data.error
+          return
+        }
         _updateProgress(data.percent)
       })
       const result = await window.vulnguard.downloadScanner(names[0])
@@ -85,7 +89,7 @@ export function SetupWizard({ open, onFinish }: SetupWizardProps) {
         for (const sc of BUNDLED_SCANNERS) _markDone(sc.label, true)
         _updateProgress(100)
       } else {
-        for (const sc of BUNDLED_SCANNERS) _markDone(sc.label, false, result?.error)
+        for (const sc of BUNDLED_SCANNERS) _markDone(sc.label, false, result?.error || firstError || undefined)
       }
     } else {
       // Web mode: 调用 API 安装
@@ -171,13 +175,11 @@ export function SetupWizard({ open, onFinish }: SetupWizardProps) {
             </label>
           </div>
           {proxyEnabled && (
-            <div className="mt-2 space-y-1.5 pt-2 border-t border-border">
-              <input type="text" value={httpProxy} onChange={(e) => setHttpProxy(e.target.value)}
-                placeholder="http://127.0.0.1:7897"
-                className="w-full rounded border border-border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary/30" />
-              <input type="text" value={httpsProxy} onChange={(e) => setHttpsProxy(e.target.value)}
-                placeholder="http://127.0.0.1:7897"
-                className="w-full rounded border border-border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary/30" />
+            <div className="mt-2 flex items-center gap-2 pt-2 border-t border-border">
+              <span className="text-xs text-muted-foreground font-mono shrink-0">http://127.0.0.1:</span>
+              <input type="number" value={proxyPort} onChange={(e) => setProxyPort(e.target.value)}
+                min={1} max={65535}
+                className="w-20 rounded border border-border bg-background px-2 py-1 text-xs text-center font-mono focus:outline-none focus:ring-1 focus:ring-primary/30" />
             </div>
           )}
         </div>

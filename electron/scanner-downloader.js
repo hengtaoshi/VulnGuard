@@ -110,16 +110,20 @@ function _makeRequest(urlStr, timeout = 120000, retries = 2) {
 class ProgressReporter {
   constructor(sendProgress) {
     this._send = sendProgress; this._last = 0; this._maxPercent = 0
+    this._lastTime = Date.now()
   }
   update(downloaded, total) {
     const pct = total > 0 ? Math.round((downloaded / total) * 100) : 0
-    if (Math.abs(pct - this._last) >= 2 || pct === 100) {
+    const elapsed = Date.now() - this._lastTime
+    // 每 1% 或每 3 秒强制推送进度，让用户能看到反馈
+    if (Math.abs(pct - this._last) >= 1 || elapsed >= 3000 || pct === 100) {
       this._maxPercent = Math.max(this._maxPercent, pct); this._last = this._maxPercent
+      this._lastTime = Date.now()
       this._send({ percent: this._maxPercent, bytes: downloaded, total })
     }
   }
   done() { this._send({ percent: 100, bytes: 0, total: 0, done: true }) }
-  error(msg) { this._send({ percent: 0, bytes: 0, total: 0, error: msg }) }
+  error(msg) { this._send({ percent: this._maxPercent || 0, bytes: 0, total: 0, error: msg }) }
 }
 
 // ─── File helpers ─────────────────────────────────────────────────────────────
