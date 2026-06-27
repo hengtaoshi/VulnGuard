@@ -238,6 +238,10 @@ function _makeRequest(urlStr, timeout = 120000, retries = 2) {
     throw err
   })
 }
+
+// --- Progress Reporter -----------------------------------------------------
+
+class ProgressReporter {
   constructor(sendProgress) {
     this._send = sendProgress
     this._last = 0
