@@ -60,7 +60,7 @@ jobs:
             electron-bin-${{ runner.os }}-
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       # electron-builder.yml 配了 electronDist: electron-bin
       # 但这个目录不存在于 git 中，需要从 node_modules 复制
