@@ -12,6 +12,14 @@ npm run setup       # Auto-download scanner binaries + Python packages
 npm run dev         # Start dev server at http://localhost:3000
 ```
 
+## Versioning
+
+Follow SemVer (`MAJOR.MINOR.PATCH`):
+- **Major**: Breaking API / architecture changes
+- **Minor**: New features, pages, UI refactors (backward-compatible)
+- **Patch**: Bug fixes, perf improvements (backward-compatible)
+- Never overwrite a published release. Each release = one Git tag (`vX.Y.Z`).
+
 ## Commands
 
 ```bash
