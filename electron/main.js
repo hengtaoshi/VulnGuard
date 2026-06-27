@@ -90,11 +90,33 @@ ipcMain.handle("check-for-updates", async () => {
   try {
     applyProxyFromSettings()
     const result = await autoUpdater.checkForUpdates()
-    return { ok: true, canUpdate: !!result?.updateInfo, version: result?.updateInfo?.version }
+    const latestVersion = result?.updateInfo?.version
+    // 比较版本号，只有远端版本 > 当前版本时才提示可更新
+    if (latestVersion && compareVersions(latestVersion, pkgVersion) > 0) {
+      return { ok: true, canUpdate: true, version: latestVersion }
+    }
+    return { ok: true, canUpdate: false }
   } catch (e) {
     return { ok: false, error: e.message }
   }
 })
+
+/**
+ * 比较两个语义化版本号（支持 v 前缀、x.y.z 格式）
+ * 返回: 1 表示 a > b, 0 表示 a === b, -1 表示 a < b
+ */
+function compareVersions(a, b) {
+  const normalize = (v) => v.replace(/^v/i, "").split(".").map(Number)
+  const pa = normalize(a)
+  const pb = normalize(b)
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const na = pa[i] || 0
+    const nb = pb[i] || 0
+    if (na > nb) return 1
+    if (na < nb) return -1
+  }
+  return 0
+}
 
 ipcMain.handle("start-update", async () => {
   try {
