@@ -7,7 +7,7 @@
 const https = require("https")
 const http = require("http")
 const { createWriteStream, existsSync, mkdirSync, unlinkSync, readFileSync, openSync, readSync, closeSync, statSync, rmSync, writeFileSync } = require("fs")
-const { join, dirname } = require("path")
+const { join } = require("path")
 const { execSync } = require("child_process")
 const { platform } = require("os")
 const { URL } = require("url")
@@ -41,7 +41,7 @@ function applyProxyFromEnv() {
       if (settings.httpProxy) process.env.HTTP_PROXY = settings.httpProxy
       if (settings.httpsProxy) process.env.HTTPS_PROXY = settings.httpsProxy
     }
-  } catch { /* best effort */ }
+  } catch { /* best effort */ void 0 }
 }
 
 function getProxyForUrl(targetUrl) {
@@ -137,7 +137,7 @@ function downloadFile(url, dest, reporter) {
       res.on("data", (chunk) => { downloaded += chunk.length; reporter.update(downloaded, total) })
       res.pipe(file)
       file.on("finish", () => { file.close(); reporter.done(); resolve() })
-      file.on("error", (err) => { file.close(); try { unlinkSync(dest) } catch {}; reject(err) })
+      file.on("error", (err) => { file.close(); try { unlinkSync(dest) } catch { void 0 }; reject(err) })
     }).catch(reject)
   })
 }
@@ -190,7 +190,7 @@ async function ensureArchiveExtracted(toolsDir, sendProgress) {
 
     // Extract to toolsDir — archive has bin/ codeql/ dependency-check/ at root
     execSync(`tar -xzf "${tmp}" -C "${toolsDir}"`, { stdio: "pipe", timeout: 300000 })
-    try { unlinkSync(tmp) } catch {}
+    try { unlinkSync(tmp) } catch { void 0 }
 
     // Verify critical binaries
     const binDir = join(toolsDir, "bin")
@@ -217,13 +217,13 @@ async function ensureArchiveExtracted(toolsDir, sendProgress) {
     reporter.done()
     return { ok: true }
   } catch (err) {
-    try { unlinkSync(tmp) } catch {}
+    try { unlinkSync(tmp) } catch { void 0 }
     // Clean up partially extracted files so retry starts fresh
     for (const dir of ["bin", "codeql", "dependency-check"]) {
       const p = join(toolsDir, dir)
-      try { rmSync(p, { recursive: true, force: true }) } catch {}
+      try { rmSync(p, { recursive: true, force: true }) } catch { void 0 }
     }
-    try { unlinkSync(join(toolsDir, MARKER)) } catch {}
+    try { unlinkSync(join(toolsDir, MARKER)) } catch { void 0 }
     reporter.error(err.message)
     return { ok: false, error: err.message }
   }
