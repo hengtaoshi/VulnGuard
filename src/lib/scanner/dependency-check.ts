@@ -37,7 +37,9 @@ interface DcReport {
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
 function resolveDcPath(): string | null {
-  // Check extracted install first (tools/dependency-check/bin/)
+  // Check extracted install — archive has an extra nesting level
+  const dcNested = join(TOOLS_DIR, "dependency-check", "dependency-check", "bin", "dependency-check.bat")
+  if (existsSync(dcNested)) return dcNested
   const dcDir = join(TOOLS_DIR, "dependency-check", "bin", "dependency-check.bat")
   if (existsSync(dcDir)) return dcDir
 

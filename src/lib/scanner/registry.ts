@@ -154,6 +154,8 @@ const scanners: Scanner[] = [
       if (!archiveExtracted()) return false
       if (existsSync(join(TOOLS_BIN, "dependency-check.bat"))) return true
       if (existsSync(join(TOOLS_BIN, "dependency-check.sh"))) return true
+      // 归档内比预期多一层：dependency-check/dependency-check/bin/
+      if (existsSync(join(TOOLS_DIR, "dependency-check", "dependency-check", "bin", "dependency-check.bat"))) return true
       if (existsSync(join(TOOLS_DIR, "dependency-check", "bin", "dependency-check.bat"))) return true
       return binExists("dependency-check")
     },

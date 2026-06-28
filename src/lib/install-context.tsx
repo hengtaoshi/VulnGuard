@@ -138,12 +138,18 @@ function InstallDetailOverlay({
         </div>
 
         <div className="text-center space-y-4 mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-primary/10">
-            <Download className="h-7 w-7 text-primary animate-bounce" />
+          <div className={`inline-flex items-center justify-center w-14 h-14 rounded-2xl ${doneCount === total ? "bg-emerald-500/10" : "bg-primary/10"}`}>
+            {doneCount === total ? (
+              <CheckCircle2 className="h-7 w-7 text-emerald-500" />
+            ) : (
+              <Download className="h-7 w-7 text-primary animate-bounce" />
+            )}
           </div>
-          <h2 className="text-lg font-bold">正在安装扫描器</h2>
+          <h2 className={`text-lg font-bold ${doneCount === total ? "text-emerald-500" : ""}`}>
+            {doneCount === total ? "安装完成" : "正在安装扫描器"}
+          </h2>
           <p className="text-sm text-muted-foreground">
-            {doneCount}/{total} — {currentLabel}
+            {doneCount === total ? "所有扫描器已就绪，可以开始使用" : `${doneCount}/${total} — ${currentLabel}`}
           </p>
         </div>
 
@@ -212,7 +218,10 @@ export function InstallProgressProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const autoDismissed = useRef(false)
+
   const startInstall = useCallback((scannerNames: string[]) => {
+    autoDismissed.current = false
     setInstalling(true)
     setExpanded(false)
     setDisplayPct(0)
@@ -226,6 +235,7 @@ export function InstallProgressProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const reset = useCallback(() => {
+    autoDismissed.current = false
     setInstalling(false)
     setDisplayPct(0)
     setCompleted([])
@@ -240,6 +250,15 @@ export function InstallProgressProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     setDoneRef(completed.length + failed.length)
   }, [completed.length, failed.length])
+
+  // Auto-dismiss floating ball 5s after all done
+  useEffect(() => {
+    if (totalScanners > 0 && doneRef === totalScanners && !autoDismissed.current) {
+      autoDismissed.current = true
+      const timer = setTimeout(reset, 5000)
+      return () => clearTimeout(timer)
+    }
+  }, [doneRef, totalScanners])
 
   const done = totalScanners > 0 && doneRef === totalScanners
   const hasError = failed.length > 0 && completed.length === 0

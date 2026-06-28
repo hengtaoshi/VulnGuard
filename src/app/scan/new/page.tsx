@@ -144,6 +144,7 @@ export default function NewScanPage() {
       ".mp3", ".mp4", ".avi", ".mov", ".wmv", ".flv",
       ".exe", ".dll", ".so", ".dylib", ".bin", ".obj", ".o", ".a", ".lib",
       ".zip", ".tar", ".gz", ".rar", ".7z", ".bz2", ".xz",
+      ".jar", ".class", ".war",
       ".ttf", ".otf", ".woff", ".woff2", ".eot",
     ])
 
@@ -172,6 +173,7 @@ export default function NewScanPage() {
              !/\/\.reasonix\//.test(path) &&
              !/\/\.superpowers\//.test(path) &&
              !/\/\.claude\//.test(path) &&
+             !/\/\.scanner-assets\//.test(path) &&
              !/\/target\//.test(path) &&
              !/\/\.terraform\//.test(path) &&
              !/\/venv\//.test(path) &&

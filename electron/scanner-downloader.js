@@ -242,8 +242,12 @@ function getScannerPath(name, toolsDir) {
     case "osv-scanner": case "scorecard": case "semgrep":
     case "bandit": case "checkov": case "pip-audit":
       return join(binDir, name + ".exe")
-    case "dependency-check":
+    case "dependency-check": {
+      // 归档内多一层嵌套：dependency-check/dependency-check/bin/
+      const nested = join(toolsDir, "dependency-check", "dependency-check", "bin", IS_WIN ? "dependency-check.bat" : "dependency-check.sh")
+      if (existsSync(nested)) return nested
       return join(toolsDir, "dependency-check", "bin", IS_WIN ? "dependency-check.bat" : "dependency-check.sh")
+    }
     case "codeql":
       return join(toolsDir, "codeql", "codeql", "codeql" + (IS_WIN ? ".exe" : ""))
     default:
