@@ -152,8 +152,9 @@ function prefetchNvdCache() {
   console.log(`[prefetch] Starting NVD cache download in background...`)
   const child = require("child_process").spawn(
     dcPath, ["--updateonly", "--data", nvdCacheDir],
-    { env: { ...process.env, ...(javaOpts ? { JAVA_OPTS: javaOpts } : {}) }, stdio: ["ignore", "pipe", "pipe"], windowsHide: true }
+    { env: { ...process.env, ...(javaOpts ? { JAVA_OPTS: javaOpts } : {}) }, stdio: ["ignore", "pipe", "pipe"], windowsHide: true, detached: true }
   )
+  child.unref() // 不阻塞应用退出
   const logStream = fs.createWriteStream(logFile, { flags: "a" })
   child.stdout.pipe(logStream)
   child.stderr.pipe(logStream)
@@ -677,7 +678,13 @@ app.on("activate", () => {
 
 app.on("before-quit", () => {
   if (serverProcess) {
-    serverProcess.kill("SIGTERM")
+    try {
+      if (process.platform === "win32") {
+        require("child_process").execSync(`taskkill /F /PID ${serverProcess.pid} 2>nul`, { stdio: "ignore" })
+      } else {
+        serverProcess.kill("SIGTERM")
+      }
+    } catch { /* ignore */ }
     serverProcess = null
   }
 })
