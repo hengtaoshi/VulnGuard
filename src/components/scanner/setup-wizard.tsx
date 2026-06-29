@@ -33,7 +33,7 @@ interface SetupWizardProps {
 }
 
 export function SetupWizard({ open, onFinish }: SetupWizardProps) {
-  const { installing, startInstall, _updateProgress, _markDone } = useInstallProgress()
+  const { installing, startInstall, _updateProgress, _setCurrentLabel, _markDone } = useInstallProgress()
   const [isElectron, setIsElectron] = useState(false)
   const abortRef = useRef(false)
 
@@ -75,12 +75,27 @@ export function SetupWizard({ open, onFinish }: SetupWizardProps) {
     // 下载第一个扫描器 → 触发归档下载
     if (isElectron && window.vulnguard?.downloadScanner) {
       let firstError: string | null = null
+      let downloadFinished = false
       const unsub = window.vulnguard.onScannerProgress((data: InstallProgress) => {
         if (data.error) {
           if (!firstError) firstError = data.error
           return
         }
         _updateProgress(data.percent)
+        if (data.done) {
+          if (!downloadFinished) {
+            downloadFinished = true
+            _setCurrentLabel("正在解压扫描引擎...")
+            _updateProgress(99)
+          }
+          return
+        }
+        if (data.bytes && data.total && data.bytes > 0 && data.total > 0) {
+          const mb = Math.round(data.total / 1048576)
+          _setCurrentLabel(`正在下载 ${data.percent}%（共约 ${mb} MB）`)
+        } else if (data.percent > 0) {
+          _setCurrentLabel(`正在下载 ${data.percent}%`)
+        }
       })
       const result = await window.vulnguard.downloadScanner(names[0])
       unsub()

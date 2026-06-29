@@ -32,6 +32,8 @@ interface InstallContextValue {
   reset: () => void
   /** Update installation progress (called by SetupWizard) */
   _updateProgress: (pct: number) => void
+  /** Update current status label (called by SetupWizard) */
+  _setCurrentLabel: (label: string) => void
   /** Mark a scanner as completed/failed */
   _markDone: (name: string, ok: boolean, errorMsg?: string) => void
   /** Error details per failed scanner */
@@ -149,7 +151,7 @@ function InstallDetailOverlay({
             {doneCount === total ? "安装完成" : "正在安装扫描器"}
           </h2>
           <p className="text-sm text-muted-foreground">
-            {doneCount === total ? "所有扫描器已就绪，可以开始使用" : `${doneCount}/${total} — ${currentLabel}`}
+            {doneCount === total ? "所有扫描器已就绪，可以开始使用" : doneCount > 0 ? `${doneCount}/${total} — ${currentLabel}` : currentLabel}
           </p>
         </div>
 
@@ -207,6 +209,10 @@ export function InstallProgressProvider({ children }: { children: ReactNode }) {
 
   const _updateProgress = useCallback((pct: number) => {
     setDisplayPct(prev => Math.max(prev, pct))
+  }, [])
+
+  const _setCurrentLabel = useCallback((label: string) => {
+    setCurrentLabel(label)
   }, [])
 
   const _markDone = useCallback((name: string, ok: boolean, errorMsg?: string) => {
@@ -267,7 +273,7 @@ export function InstallProgressProvider({ children }: { children: ReactNode }) {
     <InstallContext.Provider value={{
       installing, displayPct, completed, failed, expanded,
       startInstall, setExpanded, reset,
-      _updateProgress, _markDone, failedErrors,
+      _updateProgress, _setCurrentLabel, _markDone, failedErrors,
     }}>
       {children}
 
