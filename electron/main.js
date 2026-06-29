@@ -109,11 +109,59 @@ ipcMain.handle("download-scanner", async (_event, scannerName) => {
         mainWindow.webContents.send("scanner-progress", { scanner: scannerName, ...progress })
       }
     })
+
+    // 安装成功后后台预下载 Dependency-Check NVD 缓存
+    if (result?.ok && !result?.skipped) {
+      prefetchNvdCache()
+    }
+
     return result
   } catch (e) {
     return { ok: false, error: e.message }
   }
 })
+
+// ─── 后台预下载 Dependency-Check NVD 缓存 ─────────────────────────────────
+
+function prefetchNvdCache() {
+  const dcCandidates = [
+    path.join(TOOLS_DIR, "dependency-check", "dependency-check", "bin", process.platform === "win32" ? "dependency-check.bat" : "dependency-check.sh"),
+    path.join(TOOLS_DIR, "dependency-check", "bin", process.platform === "win32" ? "dependency-check.bat" : "dependency-check.sh"),
+  ]
+  const dcPath = dcCandidates.find(p => fs.existsSync(p))
+  if (!dcPath) {
+    console.log("[prefetch] dependency-check not found, skipping NVD cache prefetch")
+    return
+  }
+
+  const nvdCacheDir = path.join(app.getPath("userData"), ".nvd-cache", "data")
+  // 已有缓存就跳过
+  if (fs.existsSync(nvdCacheDir) && fs.readdirSync(nvdCacheDir).length > 0) {
+    console.log("[prefetch] NVD cache already exists, skipping")
+    return
+  }
+
+  if (!fs.existsSync(nvdCacheDir)) fs.mkdirSync(nvdCacheDir, { recursive: true })
+  const logFile = path.join(app.getPath("userData"), "logs", "nvd-prefetch.log")
+  applyProxyFromSettings()
+  const proxy = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || ""
+  const javaOpts = proxy
+    ? `-Dhttp.proxyHost=127.0.0.1 -Dhttp.proxyPort=${new URL(proxy).port} -Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=${new URL(proxy).port}`
+    : ""
+
+  console.log(`[prefetch] Starting NVD cache download in background...`)
+  const child = require("child_process").spawn(
+    dcPath, ["--updateonly", "--data", nvdCacheDir],
+    { env: { ...process.env, ...(javaOpts ? { JAVA_OPTS: javaOpts } : {}) }, stdio: ["ignore", "pipe", "pipe"], windowsHide: true }
+  )
+  const logStream = fs.createWriteStream(logFile, { flags: "a" })
+  child.stdout.pipe(logStream)
+  child.stderr.pipe(logStream)
+  child.on("exit", (code) => {
+    logStream.end()
+    console.log(`[prefetch] NVD cache download exited with code ${code}`)
+  })
+}
 
 ipcMain.handle("check-for-updates", async () => {
   try {

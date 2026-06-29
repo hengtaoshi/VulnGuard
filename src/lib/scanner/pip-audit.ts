@@ -12,12 +12,21 @@ function severityFromScore(score?: number): "Critical" | "High" | "Medium" | "Lo
   return "Low"
 }
 
-const PIPAUDIT_PATH = join(TOOLS_BIN, "pip-audit.exe")
+/** 优先使用系统 pip-audit，回退到 bundled exe */
+function resolvePath(): string {
+  try {
+    const { execSync } = require("child_process")
+    const result = execSync("where pip-audit 2>nul", { stdio: "pipe", timeout: 5000, encoding: "utf-8" })
+    const p = (result as string).trim().split("\n")[0]
+    if (p) return p.trim()
+  } catch { /* fall through */ }
+  return join(TOOLS_BIN, "pip-audit.exe")
+}
 
 function isAvailable(): boolean {
   try {
     const { execSync } = require("child_process")
-    execSync(`"${PIPAUDIT_PATH}" --version`, { stdio: "pipe", timeout: 5000 })
+    execSync(`"${resolvePath()}" --version`, { stdio: "pipe", timeout: 5000 })
     return true
   } catch {
     return false
@@ -30,9 +39,10 @@ export async function runPipAuditScan(targetPath: string): Promise<ScanResult> {
     return { vulnerabilities: [], totalChecks: 0, errors: ["pip-audit not found"], scannerName }
   }
 
+  const PIPAUDIT_PATH = resolvePath()
+
   try {
     const requirementsPath = `${targetPath.replace(/\\/g, "/")}/requirements.txt`
-    // Check if requirements.txt exists
     const fs = require("fs") as typeof import("fs")
     if (!fs.existsSync(requirementsPath)) {
       return { vulnerabilities: [], totalChecks: 0, errors: [], scannerName }
@@ -46,7 +56,6 @@ export async function runPipAuditScan(targetPath: string): Promise<ScanResult> {
       )
       stdout = r.stdout
     } catch (err: unknown) {
-      // pip-audit exits non-zero when vulnerabilities are found
       if (err && typeof err === "object" && "stdout" in err) {
         stdout = (err as { stdout: string }).stdout || ""
       }

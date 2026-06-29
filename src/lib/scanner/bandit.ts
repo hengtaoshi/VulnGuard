@@ -30,10 +30,21 @@ function severityMap(sev: string): "Critical" | "High" | "Medium" | "Low" {
 
 const BANDIT_PATH = join(TOOLS_BIN, "bandit.exe")
 
+/** 优先使用系统 bandit，回退到 bundled exe */
+function resolveBanditPath(): string {
+  try {
+    const { execSync } = require("child_process")
+    const result = execSync("where bandit 2>nul", { stdio: "pipe", timeout: 5000, encoding: "utf-8" })
+    const p = (result as string).trim().split("\n")[0]
+    if (p) return p.trim()
+  } catch { /* fall through */ }
+  return BANDIT_PATH
+}
+
 function isAvailable(): boolean {
   try {
     const { execSync } = require("child_process")
-    execSync(`"${BANDIT_PATH}" --version`, { stdio: "pipe", timeout: 5000 })
+    execSync(`"${resolveBanditPath()}" --version`, { stdio: "pipe", timeout: 5000 })
     return true
   } catch {
     return false
@@ -78,7 +89,7 @@ export async function runBanditScan(targetPath: string): Promise<ScanResult> {
 
   try {
     const { stdout } = await execAsync(
-      `"${BANDIT_PATH}" -r "${targetPath.replace(/\\/g, "/")}" -f json --quiet`,
+      `"${resolveBanditPath()}" -r "${targetPath.replace(/\\/g, "/")}" -f json --quiet`,
       { timeout: 120000, maxBuffer: 10 * 1024 * 1024 },
     )
 

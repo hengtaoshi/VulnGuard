@@ -32,12 +32,21 @@ function severityMap(sev: string | null): "Critical" | "High" | "Medium" | "Low"
   }
 }
 
-const CHECKOV_PATH = join(TOOLS_BIN, "checkov.exe")
+/** 优先使用系统 checkov，回退到 bundled exe */
+function resolvePath(): string {
+  try {
+    const { execSync } = require("child_process")
+    const result = execSync("where checkov 2>nul", { stdio: "pipe", timeout: 5000, encoding: "utf-8" })
+    const p = (result as string).trim().split("\n")[0]
+    if (p) return p.trim()
+  } catch { /* fall through */ }
+  return join(TOOLS_BIN, "checkov.exe")
+}
 
 function isAvailable(): boolean {
   try {
     const { execSync } = require("child_process")
-    execSync(`"${CHECKOV_PATH}" --version`, { stdio: "pipe", timeout: 5000 })
+    execSync(`"${resolvePath()}" --version`, { stdio: "pipe", timeout: 10000 })
     return true
   } catch {
     return false
@@ -50,6 +59,7 @@ export async function runCheckovScan(targetPath: string): Promise<ScanResult> {
     return { vulnerabilities: [], totalChecks: 0, errors: ["Checkov not installed. Run: pip install checkov"], scannerName }
   }
 
+  const CHECKOV_PATH = resolvePath()
   let rawJson = ""
 
   try {
@@ -59,7 +69,6 @@ export async function runCheckovScan(targetPath: string): Promise<ScanResult> {
     )
     rawJson = stdout.trim()
   } catch (err: unknown) {
-    // Checkov exits non-zero when findings exist
     if (err instanceof Error && "stdout" in err) {
       rawJson = (err as { stdout: string }).stdout?.toString().trim() || ""
     }
@@ -73,14 +82,11 @@ export async function runCheckovScan(targetPath: string): Promise<ScanResult> {
   }
 
   try {
-    // Checkov may output a JSON array [{...},{...},{...}] or a single object {...}
     const trimmed = rawJson.trim()
     let parsed: any
 
     if (trimmed.startsWith("[")) {
-      // Array format — combine all results
       const reports: CheckovReport[] = JSON.parse(trimmed)
-      // Merge passed/failed checks from all reports
       const allFailed: CheckovReport["results"]["failed_checks"] = []
       const allPassed: CheckovReport["results"]["passed_checks"] = []
       for (const r of reports) {

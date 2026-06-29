@@ -9,7 +9,7 @@ const BIN_DIR = TOOLS_BIN
 const DC_BAT = join(BIN_DIR, "dependency-check.bat")
 const DC_SH = join(BIN_DIR, "dependency-check.sh")
 const DC_OUTPUT_DIR = join(process.cwd(), ".dc-report")
-const DC_DATA_DIR = join(process.cwd(), ".nvd-cache", "data")
+const DC_DATA_DIR = join(process.env.VULNGUARD_DATA_DIR || process.cwd(), ".nvd-cache", "data")
 
 // ─── OWASP Dependency-Check JSON report types ─────────────────────────────
 
