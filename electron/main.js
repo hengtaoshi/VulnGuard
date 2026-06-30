@@ -616,8 +616,19 @@ function createWindow() {
   mainWindow.on("maximize", () => mainWindow.webContents.send("window-maximize-change", true))
   mainWindow.on("unmaximize", () => mainWindow.webContents.send("window-maximize-change", false))
 
-  // Show window when ready
+  // Create splash window (loading animation while app loads)
+  const splash = new BrowserWindow({
+    width: 400, height: 320, frame: false, resizable: false,
+    center: true, show: false, backgroundColor: "#0f172a",
+  })
+  splash.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(
+    require("fs").readFileSync(path.join(__dirname, "splash.html"), "utf-8")
+  )}`)
+  splash.once("ready-to-show", () => splash.show())
+
+  // Show main window when ready, close splash
   mainWindow.once("ready-to-show", () => {
+    if (!splash.isDestroyed()) splash.close()
     mainWindow.show()
     // Silent update check after 5s — banner will show in renderer if available
     if (!IS_DEV) {
