@@ -127,6 +127,7 @@ export default function SettingsPage() {
   const { t } = useI18n()
   const router = useRouter()
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS)
+  const [realApiKey, setRealApiKey] = useState("")
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [clearing, setClearing] = useState(false)
@@ -434,7 +435,10 @@ export default function SettingsPage() {
               <Input
                 type="password"
                 value={settings.deepseekApiKey}
-                onChange={e => setSettings(s => ({ ...s, deepseekApiKey: e.target.value }))}
+                onChange={e => {
+                  setSettings(s => ({ ...s, deepseekApiKey: e.target.value }))
+                  setRealApiKey(e.target.value)
+                }}
                 className="h-8 text-xs font-mono"
                 placeholder="sk-..."
               />
@@ -466,7 +470,7 @@ export default function SettingsPage() {
             {/* 测试连接按钮 */}
             <div className="pt-2">
               <TestLlmButton
-                apiKey={settings.deepseekApiKey}
+                apiKey={realApiKey || settings.deepseekApiKey}
                 baseUrl={settings.deepseekBaseUrl}
                 model={settings.deepseekModel}
               />
@@ -664,8 +668,10 @@ export default function SettingsPage() {
 function TestLlmButton({ apiKey, baseUrl, model }: { apiKey: string; baseUrl: string; model: string }) {
   const [state, setState] = useState<"idle" | "testing" | "ok" | "fail">("idle")
   const [msg, setMsg] = useState("")
+  const isMasked = apiKey.startsWith("__MASKED__")
 
   const test = async () => {
+    if (isMasked) { setState("fail"); setMsg("请重新输入 API Key 后再测试（当前显示的是掩码值）"); return }
     if (!apiKey) { setState("fail"); setMsg("请先填写 API Key"); return }
     setState("testing"); setMsg("")
     try {
