@@ -1,11 +1,17 @@
 import { NextResponse } from "next/server"
+import { getSettings } from "@/lib/settings-store"
 
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const apiKey = body.apiKey || ""
+    let apiKey = body.apiKey || ""
     const baseUrl = (body.baseUrl || "https://api.deepseek.com").replace(/\/+$/, "")
     const model = body.model || "deepseek-v4-flash"
+
+    // 如果前端传的是掩码值，从服务端 settings 读取真实 Key
+    if (!apiKey || apiKey.startsWith("__MASKED__")) {
+      apiKey = process.env.DEEPSEEK_API_KEY || getSettings().deepseekApiKey || ""
+    }
 
     if (!apiKey) {
       return NextResponse.json({ ok: false, error: "API Key 未填写" })

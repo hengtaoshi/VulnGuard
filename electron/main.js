@@ -316,6 +316,27 @@ function startNextServer(port) {
       VULNGUARD_DATA_DIR: path.join(app.getPath("userData")),
     }
 
+    // 从 settings.json 读取 DeepSeek 配置，直接设成环境变量传给服务器
+    // 这样确保 AI 分析路由一定能读到 Key，不受 settings-store 路径影响
+    try {
+      const userSettingsPath = path.join(app.getPath("userData"), "settings.json")
+      if (fs.existsSync(userSettingsPath)) {
+        const userSettings = JSON.parse(fs.readFileSync(userSettingsPath, "utf-8"))
+        if (userSettings.deepseekApiKey && !env.DEEPSEEK_API_KEY) {
+          env.DEEPSEEK_API_KEY = userSettings.deepseekApiKey
+          writeLog("info", `Loaded DeepSeek API key from settings (${userSettings.deepseekApiKey.slice(0, 8)}...)`)
+        }
+        if (userSettings.deepseekBaseUrl && !env.DEEPSEEK_BASE_URL) {
+          env.DEEPSEEK_BASE_URL = userSettings.deepseekBaseUrl
+        }
+        if (userSettings.deepseekModel && !env.DEEPSEEK_MODEL) {
+          env.DEEPSEEK_MODEL = userSettings.deepseekModel
+        }
+      }
+    } catch (e) {
+      writeLog("warn", `Failed to load DeepSeek config from settings: ${e.message}`)
+    }
+
     // Reset server stderr for each start attempt
     serverStderr = ""
 

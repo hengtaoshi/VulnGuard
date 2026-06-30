@@ -668,10 +668,8 @@ export default function SettingsPage() {
 function TestLlmButton({ apiKey, baseUrl, model }: { apiKey: string; baseUrl: string; model: string }) {
   const [state, setState] = useState<"idle" | "testing" | "ok" | "fail">("idle")
   const [msg, setMsg] = useState("")
-  const isMasked = apiKey.startsWith("__MASKED__")
 
   const test = async () => {
-    if (isMasked) { setState("fail"); setMsg("请重新输入 API Key 后再测试（当前显示的是掩码值）"); return }
     if (!apiKey) { setState("fail"); setMsg("请先填写 API Key"); return }
     setState("testing"); setMsg("")
     try {
