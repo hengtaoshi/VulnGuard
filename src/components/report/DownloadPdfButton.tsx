@@ -13,14 +13,9 @@ interface Props {
 /** 从 scan data 生成默认文件名 */
 function makePdfName(data: ReportData): string {
   const name = data.projectName || data.target?.split(/[/\\]/).filter(Boolean).pop() || "VulnGuard"
-  const date = data.createdAt
-    ? (() => {
-        const d = new Date(data.createdAt!)
-        const pad = (n: number) => String(n).padStart(2, "0")
-        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-      })()
-    : new Date().toISOString().slice(0, 10)
-  return `${name}_${date}_安全扫描报告.pdf`
+  const d = data.createdAt ? new Date(data.createdAt!) : new Date()
+  const date = `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`
+  return `${name}-${date}-安全报告.pdf`
 }
 
 export function DownloadPdfButton({ scanId, variant = "nav" }: Props) {
@@ -77,9 +72,7 @@ export function DownloadPdfButton({ scanId, variant = "nav" }: Props) {
               <h3 className="font-semibold text-base text-foreground">
                 {state === "loading" ? "正在生成 PDF..." : "导出 PDF 报告"}
               </h3>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {isElectron ? "直接保存 PDF，无需浏览器弹窗" : "生成独立 HTML → 浏览器打印 → 另存为 PDF"}
-              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">直接导出 PDF</p>
             </div>
           </div>
           <button
