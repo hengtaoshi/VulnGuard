@@ -150,7 +150,8 @@ function scannerResultsHTML(scanners?: Array<{
       html += `<div class="sr-count">发现 ${s.count} 个问题</div>`
     }
     if (s.errors && s.errors.length > 0) {
-      html += `<div class="sr-err">${s.errors.join("; ")}</div>`
+      const err = s.errors.join("; ")
+      html += `<div class="sr-err">${err.length > 200 ? err.slice(0, 200) + "…" : err}</div>`
     }
     html += `</div>`
   }
@@ -304,7 +305,7 @@ h1{font-size:26px;font-weight:800;color:#4fc3f7;margin-bottom:4px}
 .sr-ok{background:rgba(34,197,94,.1);color:#4ade80}
 .sr-fail{background:rgba(239,68,68,.1);color:#ef4444}
 .sr-count{font-size:12px;color:#f59e0b;margin-top:4px}
-.sr-err{font-size:11px;color:#ef4444;margin-top:4px}
+.sr-err{font-size:11px;color:#ef4444;margin-top:4px;word-break:break-all;overflow-wrap:break-word}
 @media print{
   .tb{display:none!important}
   body{background:#fff!important;color:#222!important;padding:15px 25px!important;font-size:12px!important;line-height:1.6!important;orphans:3;widows:3;print-color-adjust:exact!important;-webkit-print-color-adjust:exact!important}
@@ -328,7 +329,7 @@ h1{font-size:26px;font-weight:800;color:#4fc3f7;margin-bottom:4px}
   .sr-ok{background:#e6f7e6!important;color:#2d7d2d!important;print-color-adjust:exact!important;-webkit-print-color-adjust:exact!important}
   .sr-fail{background:#fde8e8!important;color:#c53030!important;print-color-adjust:exact!important;-webkit-print-color-adjust:exact!important}
   .sr-count{color:#b7791f!important}
-  .sr-err{color:#c53030!important}
+  .sr-err{color:#c53030!important;word-break:break-all!important;overflow-wrap:break-word!important}
   .ord-body pre{color:#444!important;font-size:10px!important}
   .pa{background:#f0f4ff!important;border-color:#c0d0e8!important}
   .pa li{color:#333!important}
