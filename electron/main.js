@@ -616,36 +616,36 @@ function createWindow() {
   mainWindow.on("maximize", () => mainWindow.webContents.send("window-maximize-change", true))
   mainWindow.on("unmaximize", () => mainWindow.webContents.send("window-maximize-change", false))
 
-  // Create splash window (loading animation while app loads)
-  const splash = new BrowserWindow({
-    width: 400, height: 320, frame: false, resizable: false,
-    center: true, show: false, backgroundColor: "#0f172a",
-  })
-  splash.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(
-    require("fs").readFileSync(path.join(__dirname, "splash.html"), "utf-8")
-  )}`)
-  splash.once("ready-to-show", () => splash.show())
-
-  // Show main window when ready, close splash
+  // ── 启动加载动画：全屏显示 splash，5 秒后进入应用 ──
+  const splashHtml = require("fs").readFileSync(path.join(__dirname, "splash.html"), "utf-8")
+  mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(splashHtml)}`)
   mainWindow.once("ready-to-show", () => {
-    if (!splash.isDestroyed()) splash.close()
     mainWindow.show()
+  })
+
+  // 保证 splash 展示至少 5 秒，再加载真实应用
+  const appUrl = IS_DEV
+    ? `http://localhost:${ACTIVE_PORT}`
+    : `http://127.0.0.1:${ACTIVE_PORT}`
+
+  setTimeout(() => {
+    mainWindow.loadURL(appUrl)
+    // 打开 DevTools（仅开发模式）
+    if (IS_DEV) mainWindow.webContents.openDevTools()
     // Silent update check after 5s — banner will show in renderer if available
     if (!IS_DEV) {
       setTimeout(async () => {
         try {
           console.log("[auto-updater] checking for updates...")
-          console.log("[auto-updater] proxy:", process.env.HTTPS_PROXY || process.env.https_proxy || "NONE")
           applyProxyFromSettings()
           const result = await autoUpdater.checkForUpdates()
           console.log("[auto-updater] check result:", result?.updateInfo?.version)
         } catch (e) {
           console.error("[auto-updater] check failed:", e.message || e)
-          console.error("[auto-updater] check failed stack:", e.stack?.slice(0, 300))
         }
       }, 5000)
     }
-  })
+  }, 5000)
 
   // Open external links in browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -658,14 +658,6 @@ function createWindow() {
 
   // Auto-updater (production only)
   setupAutoUpdater()
-
-  // Load the app
-  if (IS_DEV) {
-    mainWindow.loadURL(`http://localhost:${ACTIVE_PORT}`)
-    mainWindow.webContents.openDevTools()
-  } else {
-    mainWindow.loadURL(`http://127.0.0.1:${ACTIVE_PORT}`)
-  }
 
   mainWindow.on("closed", () => {
     mainWindow = null
