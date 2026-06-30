@@ -1,8 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { FileDown, Loader2, AlertCircle, Download } from "lucide-react"
-import { openHtmlReport } from "@/lib/report-html"
+import { generateReportHtml, openHtmlReport } from "@/lib/report-html"
 import type { ReportData } from "@/lib/report-html"
 
 interface Props {
@@ -10,21 +10,47 @@ interface Props {
   variant?: "nav" | "prominent"
 }
 
+/** 从 scan data 生成默认文件名 */
+function makePdfName(data: ReportData): string {
+  const name = data.projectName || data.target?.split(/[/\\]/).filter(Boolean).pop() || "VulnGuard"
+  const date = data.createdAt
+    ? (() => {
+        const d = new Date(data.createdAt!)
+        const pad = (n: number) => String(n).padStart(2, "0")
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+      })()
+    : new Date().toISOString().slice(0, 10)
+  return `${name}_${date}_安全扫描报告.pdf`
+}
+
 export function DownloadPdfButton({ scanId, variant = "nav" }: Props) {
   const [state, setState] = useState<"idle" | "loading" | "error">("idle")
+  const [isElectron, setIsElectron] = useState(false)
+
+  useEffect(() => {
+    setIsElectron(typeof window !== "undefined" && !!window.vulnguard?.downloadPdf)
+  }, [])
 
   const handleDownload = async () => {
     if (state === "loading") return
     setState("loading")
 
     try {
-      // Fetch full scan detail from API (auth handled via cookie)
       const res = await fetch(`/api/scans/${scanId}`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data: ReportData = await res.json()
 
-      // Open in new tab with print dialog
-      openHtmlReport(data)
+      if (isElectron && window.vulnguard?.downloadPdf) {
+        // ── Electron: 直出 PDF，无需弹窗 ──
+        const html = generateReportHtml(data)
+        const filename = makePdfName(data)
+        const result = await window.vulnguard.downloadPdf(html, filename)
+        if (!result?.ok && !result?.cancelled) throw new Error(result?.error || "导出失败")
+      } else {
+        // ── Web fallback: 开新标签 → 浏览器打印 → 另存 PDF ──
+        openHtmlReport(data)
+      }
+
       setState("idle")
     } catch (err) {
       console.error("Report generation failed:", err)
@@ -37,7 +63,6 @@ export function DownloadPdfButton({ scanId, variant = "nav" }: Props) {
   if (variant === "prominent") {
     return (
       <div className="relative overflow-hidden rounded-xl border border-violet-500/20 bg-gradient-to-br from-violet-500/[0.03] via-violet-500/[0.01] to-background">
-        {/* Decorative top bar */}
         <div className="h-1 w-full bg-gradient-to-r from-violet-600/50 via-violet-500/30 to-violet-400/10" />
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 sm:p-6">
           <div className="flex items-center gap-4">
@@ -50,12 +75,10 @@ export function DownloadPdfButton({ scanId, variant = "nav" }: Props) {
             </div>
             <div>
               <h3 className="font-semibold text-base text-foreground">
-                {state === "loading" ? "正在加载报告..." : "导出 PDF 报告"}
+                {state === "loading" ? "正在生成 PDF..." : "导出 PDF 报告"}
               </h3>
               <p className="text-xs text-muted-foreground mt-0.5">
-                {state === "loading"
-                  ? "正在获取扫描数据..."
-                  : "生成独立 HTML → 浏览器打印 → 另存为 PDF"}
+                {isElectron ? "直接保存 PDF，无需浏览器弹窗" : "生成独立 HTML → 浏览器打印 → 另存为 PDF"}
               </p>
             </div>
           </div>
@@ -74,7 +97,7 @@ export function DownloadPdfButton({ scanId, variant = "nav" }: Props) {
             {state === "loading" ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                加载中...
+                生成中...
               </>
             ) : (
               <>
@@ -84,7 +107,6 @@ export function DownloadPdfButton({ scanId, variant = "nav" }: Props) {
             )}
           </button>
         </div>
-        {/* Error state */}
         {state === "error" && (
           <div className="mx-5 mb-4 sm:mx-6 sm:mb-5 flex items-center gap-2.5 p-3 bg-destructive/10 border border-destructive/20 text-destructive text-xs rounded-lg">
             <AlertCircle className="h-3.5 w-3.5 shrink-0" />
@@ -108,13 +130,13 @@ export function DownloadPdfButton({ scanId, variant = "nav" }: Props) {
         ) : (
           <FileDown className="h-3 w-3" />
         )}
-        {state === "loading" ? "加载中..." : "PDF"}
+        {state === "loading" ? "生成中..." : "PDF"}
       </button>
 
       {state === "error" && (
         <div className="absolute top-full right-0 mt-2 z-50 flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/20 text-destructive text-xs rounded-lg shadow-lg whitespace-nowrap">
           <AlertCircle className="h-3 w-3 shrink-0" />
-          <span>报告生成失败，请稍后重试</span>
+          <span>导出失败，请稍后重试</span>
         </div>
       )}
     </div>

@@ -227,6 +227,34 @@ ipcMain.handle("open-file-dialog", async () => {
   return result.canceled ? null : result.filePaths
 })
 
+// ─── Direct PDF export (via Electron printToPDF) ──────────────────────────
+
+ipcMain.handle("download-pdf", async (_event, html, defaultName) => {
+  try {
+    const pdfWindow = new BrowserWindow({ show: false, webPreferences: { sandbox: true } })
+    await pdfWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
+    // Wait for fonts/layout to settle
+    await new Promise(r => setTimeout(r, 500))
+    const buf = await pdfWindow.webContents.printToPDF({
+      printBackground: true,
+      preferCSSPageSize: true,
+      margins: { top: 0.4, bottom: 0.4, left: 0.4, right: 0.4 },
+    })
+    pdfWindow.close()
+
+    const { filePath } = await dialog.showSaveDialog(mainWindow, {
+      defaultPath: defaultName || "VulnGuard-Report.pdf",
+      filters: [{ name: "PDF 文件", extensions: ["pdf"] }],
+    })
+    if (!filePath) return { ok: false, cancelled: true }
+
+    fs.writeFileSync(filePath, buf)
+    return { ok: true, filePath }
+  } catch (e) {
+    return { ok: false, error: e.message }
+  }
+})
+
 // ─── Log file for server diagnostics ────────────────────────────────────────
 
 const LOG_DIR = IS_DEV

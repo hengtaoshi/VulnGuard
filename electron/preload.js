@@ -52,6 +52,9 @@ contextBridge.exposeInMainWorld("vulnguard", {
   // File dialogs
   openFileDialog: () => ipcRenderer.invoke("open-file-dialog"),
 
+  // PDF export (Electron printToPDF, no browser popup needed)
+  downloadPdf: (html, filename) => ipcRenderer.invoke("download-pdf", html, filename),
+
   // Event listeners
   onScannerProgress: (callback) => {
     const handler = (_event, data) => callback(data)

@@ -28,7 +28,7 @@ export function TitleBar() {
 
   return (
     <header
-      className="flex h-9 shrink-0 items-center justify-between bg-background border-b select-none"
+      className="fixed top-0 left-0 right-0 z-50 flex h-9 items-center justify-between bg-background border-b select-none"
       style={DRAG}
       onDoubleClick={handleDoubleClick}
     >

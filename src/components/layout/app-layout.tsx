@@ -35,9 +35,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     <I18nProvider>
       <Providers>
         <InstallProgressProvider>
-          <div className="min-h-screen flex flex-col">
+          <div className="relative min-h-screen">
             <TitleBar />
-            <div className="flex flex-1">
+            <div className="pt-9 flex">
               <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
               <div className="flex-1 md:pl-60 flex flex-col">
                 <Header onMenuClick={() => setSidebarOpen(true)} />

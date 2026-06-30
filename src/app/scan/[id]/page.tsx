@@ -976,6 +976,7 @@ function AIDeepAnalysis({ scan }: { scan: ScanDetail }) {
               <AlertCircle className="h-10 w-10 mb-3 text-destructive" />
               <p className="font-medium">{t("ai.error")}</p>
               <p className="text-sm mt-1">{t("ai.errorDesc")}</p>
+              <p className="text-xs mt-2 text-destructive/70 font-mono">{(llm.error as Error)?.message || "未知错误"}</p>
               <button
                 onClick={handleAnalyze}
                 className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border text-sm font-medium hover:bg-accent transition-colors"

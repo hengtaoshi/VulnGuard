@@ -16,7 +16,12 @@ async function fetcher<T>(url: string, init?: RequestInit): Promise<T> {
       ...init?.headers,
     },
   })
-  if (!res.ok) throw new Error(`API error: ${res.status}`)
+  if (!res.ok) {
+    const body = await res.text().catch(() => "")
+    let detail = ""
+    try { detail = JSON.parse(body).error || body } catch { detail = body }
+    throw new Error(detail || `API error: ${res.status}`)
+  }
   return res.json()
 }
 

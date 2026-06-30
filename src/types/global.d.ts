@@ -30,6 +30,13 @@ interface VulnguardResult {
   skipped?: boolean
 }
 
+interface VulnguardPdfResult {
+  ok: boolean
+  cancelled?: boolean
+  error?: string
+  filePath?: string
+}
+
 interface VulnguardStatus {
   scanEngine: boolean
   toolsDir: string
@@ -62,6 +69,9 @@ interface Window {
     onUpdateAvailable: (cb: (info: VulnguardUpdateInfo) => void) => () => void
     onUpdateProgress: (cb: (p: VulnguardProgress) => void) => () => void
     onUpdateDownloaded: (cb: () => void) => () => void
+
+    // PDF export (Electron printToPDF)
+    downloadPdf: (html: string, filename: string) => Promise<VulnguardPdfResult>
 
     // Scanner installation
     downloadScanner: (name: string) => Promise<VulnguardResult>
