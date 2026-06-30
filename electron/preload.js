@@ -36,6 +36,19 @@ contextBridge.exposeInMainWorld("vulnguard", {
     return () => ipcRenderer.removeListener("update-downloaded", handler)
   },
 
+  // Window controls (custom title bar)
+  windowControls: {
+    minimize: () => ipcRenderer.invoke("window-minimize"),
+    maximize: () => ipcRenderer.invoke("window-maximize"),
+    close: () => ipcRenderer.invoke("window-close"),
+    isMaximized: () => ipcRenderer.invoke("window-is-maximized"),
+    onMaximizeChange: (callback) => {
+      const handler = (_event, maximized) => callback(maximized)
+      ipcRenderer.on("window-maximize-change", handler)
+      return () => ipcRenderer.removeListener("window-maximize-change", handler)
+    },
+  },
+
   // File dialogs
   openFileDialog: () => ipcRenderer.invoke("open-file-dialog"),
 

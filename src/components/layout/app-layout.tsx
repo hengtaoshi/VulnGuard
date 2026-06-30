@@ -6,6 +6,7 @@ import { Providers } from "@/app/providers"
 import { ErrorBoundary } from "@/components/ui/error-boundary"
 import { Sidebar } from "./sidebar"
 import { Header } from "./header"
+import { TitleBar } from "./titlebar"
 import { UpdateBanner } from "./update-banner"
 import { SetupWizard } from "@/components/scanner/setup-wizard"
 import { InstallProgressProvider } from "@/lib/install-context"
@@ -34,14 +35,17 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     <I18nProvider>
       <Providers>
         <InstallProgressProvider>
-          <div className="min-h-screen">
-            <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-            <div className="md:pl-60">
-              <Header onMenuClick={() => setSidebarOpen(true)} />
-              <UpdateBanner />
-              <main className="p-4 md:p-6">
-                <ErrorBoundary>{children}</ErrorBoundary>
-              </main>
+          <div className="min-h-screen flex flex-col">
+            <TitleBar />
+            <div className="flex flex-1">
+              <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+              <div className="flex-1 md:pl-60 flex flex-col">
+                <Header onMenuClick={() => setSidebarOpen(true)} />
+                <UpdateBanner />
+                <main className="p-4 md:p-6 flex-1">
+                  <ErrorBoundary>{children}</ErrorBoundary>
+                </main>
+              </div>
             </div>
           </div>
 

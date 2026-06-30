@@ -69,7 +69,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   return (
     <>
       {/* Desktop sidebar */}
-      <aside className="fixed left-0 top-0 z-40 hidden md:flex h-screen w-60 flex-col border-r border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <aside className="fixed left-0 top-9 z-40 hidden md:flex h-[calc(100vh-36px)] w-60 flex-col border-r border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         {sidebarContent}
       </aside>
 
@@ -77,7 +77,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       {isOpen && (
         <>
           <div className="fixed inset-0 z-40 bg-black/50 md:hidden" onClick={onClose} />
-          <aside className="fixed left-0 top-0 z-50 flex h-screen w-60 flex-col border-r border-border bg-background md:hidden animate-in slide-in-from-left">
+          <aside className="fixed left-0 top-9 z-50 flex h-[calc(100vh-36px)] w-60 flex-col border-r border-border bg-background md:hidden animate-in slide-in-from-left">
             {sidebarContent}
           </aside>
         </>

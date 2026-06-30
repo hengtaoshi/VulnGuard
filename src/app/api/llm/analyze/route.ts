@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server"
 import type { LLMAnalysisRequest, LLMAnalysisResponse } from "@/lib/api/llm"
 import { getDeepseekModel, getDeepseekApiUrl } from "@/lib/api/llm"
+import { getSettings } from "@/lib/settings-store"
 
 export async function POST(request: Request) {
   try {
     const data: LLMAnalysisRequest = await request.json()
-    const apiKey = process.env.DEEPSEEK_API_KEY
+    const apiKey = process.env.DEEPSEEK_API_KEY || getSettings().deepseekApiKey
 
     if (!apiKey) {
       return NextResponse.json({ error: "DeepSeek API key not configured" }, { status: 500 })

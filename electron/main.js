@@ -210,6 +210,16 @@ ipcMain.handle("start-update", async () => {
   }
 })
 
+// ─── Window Controls (custom title bar) ──────────────────────────────────
+
+ipcMain.handle("window-minimize", () => mainWindow?.minimize())
+ipcMain.handle("window-maximize", () => {
+  if (mainWindow?.isMaximized()) mainWindow.unmaximize()
+  else mainWindow?.maximize()
+})
+ipcMain.handle("window-close", () => mainWindow?.close())
+ipcMain.handle("window-is-maximized", () => mainWindow?.isMaximized())
+
 ipcMain.handle("open-file-dialog", async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ["openFile", "openDirectory", "multiSelections"],
@@ -541,6 +551,7 @@ function createWindow() {
     minWidth: 1024,
     minHeight: 700,
     title: "VulnGuard Security Scanner",
+    frame: false,
     icon: path.join(__dirname, "..", "resources", "icon.png"),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -551,6 +562,10 @@ function createWindow() {
     show: false,
     backgroundColor: "#0f172a",
   })
+
+  // Custom title bar — notify renderer when maximize state changes
+  mainWindow.on("maximize", () => mainWindow.webContents.send("window-maximize-change", true))
+  mainWindow.on("unmaximize", () => mainWindow.webContents.send("window-maximize-change", false))
 
   // Show window when ready
   mainWindow.once("ready-to-show", () => {

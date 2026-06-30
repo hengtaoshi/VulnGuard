@@ -36,6 +36,14 @@ interface VulnguardStatus {
   archiveExtracted?: boolean
 }
 
+interface VulnguardWindowControls {
+  minimize: () => Promise<void>
+  maximize: () => Promise<void>
+  close: () => Promise<void>
+  isMaximized: () => Promise<boolean>
+  onMaximizeChange: (cb: (maximized: boolean) => void) => () => void
+}
+
 interface Window {
   vulnguard?: {
     version: string
@@ -44,6 +52,9 @@ interface Window {
     getDataDir: () => Promise<string>
     getScannerStatus: () => Promise<VulnguardStatus>
     openFileDialog: () => Promise<string[] | null>
+
+    // Window controls (custom title bar)
+    windowControls: VulnguardWindowControls
 
     // Updates
     checkForUpdates: () => Promise<VulnguardResult>
