@@ -7,44 +7,37 @@
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{
-  background:#0f172a;
-  color:#e0e6f0;
+  background:#0f172a;color:#e0e6f0;
   font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
   display:flex;align-items:center;justify-content:center;
   height:100vh;overflow:hidden;user-select:none;
 }
 .splash{text-align:center}
-.shield{
-  width:72px;height:72px;margin:0 auto 20px;
-  background:linear-gradient(135deg,rgba(99,102,241,.2),rgba(99,102,241,.05));
-  border-radius:20px;display:flex;align-items:center;justify-content:center;
-  animation:pulse 2s ease-in-out infinite;
+.shield-wrap{margin:0 auto 24px;display:flex;align-items:center;justify-content:center}
+.trace{width:72px;height:72px;display:block}
+.trace path{
+  fill:none;stroke:#22c55e;stroke-width:1.5;
+  stroke-dasharray:180;stroke-dashoffset:180;
+  animation:trace 2.4s ease-in-out infinite;
 }
-.shield svg{width:36px;height:36px;color:#818cf8}
+@keyframes trace{
+  0%{stroke-dashoffset:180;opacity:.3}
+  50%{stroke-dashoffset:0;opacity:1}
+  90%{opacity:1}
+  100%{stroke-dashoffset:-180;opacity:.3}
+}
 h1{font-size:22px;font-weight:800;letter-spacing:-.3px}
-h1 span{color:#818cf8}
+h1 span{color:#22c55e}
 .sub{font-size:12px;color:#4a5568;margin-top:4px;letter-spacing:1px}
-.spinner{margin-top:32px;width:32px;height:32px;margin-left:auto;margin-right:auto}
-.spinner::after{
-  content:'';display:block;width:24px;height:24px;margin:4px;
-  border:2px solid transparent;border-top-color:#818cf8;border-radius:50%;
-  animation:spin .8s linear infinite;
-}
-@keyframes spin{to{transform:rotate(360deg)}}
-@keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.05);opacity:.8}}
 </style>
 </head>
 <body>
 <div class="splash">
-  <div class="shield">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-      <path d="M12 2l7 4v5c0 5-3.5 9.7-7 11-3.5-1.3-7-6-7-11V6l7-4z"/>
-      <path d="M9 12l2 2 4-4" stroke-width="2"/>
-    </svg>
+  <div class="shield-wrap">
+    <svg class="trace" viewBox="0 0 24 24"><path d="M12 2l7 4v5c0 5-3.5 9.7-7 11-3.5-1.3-7-6-7-11V6l7-4z"/></svg>
   </div>
   <h1>Vuln<span>Guard</span></h1>
   <p class="sub">SECURITY SCANNER</p>
-  <div class="spinner"></div>
 </div>
 </body>
 </html>
