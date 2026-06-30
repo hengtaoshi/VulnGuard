@@ -114,6 +114,7 @@ export default function ScanHistoryPage() {
                   <th className="text-left font-medium p-4">{t("scan.history.target")}</th>
                   <th className="text-left font-medium p-4">{t("scan.history.type")}</th>
                   <th className="text-left font-medium p-4">{t("scan.history.status")}</th>
+                  <th className="text-left font-medium p-4">扫描器</th>
                   <th className="text-left font-medium p-4">{t("scan.history.risk")}</th>
                   <th className="text-left font-medium p-4">{t("scan.history.date")}</th>
                   <th className="text-right font-medium p-4">{t("scan.history.action")}</th>
@@ -128,6 +129,18 @@ export default function ScanHistoryPage() {
                       <span className={scan.status === "completed" ? "text-emerald-500" : "text-amber-500"}>
                         {statusLabels[scan.status] ?? scan.status}
                       </span>
+                    </td>
+                    <td className="p-4">
+                      {scan.scannerStats ? (
+                        <span className={`text-xs font-medium ${scan.scannerStats.failed > 0 ? "text-red-500" : "text-emerald-500"}`}>
+                          {scan.scannerStats.success}/{scan.scannerStats.total}
+                          {scan.scannerStats.failed > 0 && (
+                            <span className="text-red-500 ml-1">({scan.scannerStats.failed} 失败)</span>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground/50">—</span>
+                      )}
                     </td>
                     <td className="p-4">
                       <Badge

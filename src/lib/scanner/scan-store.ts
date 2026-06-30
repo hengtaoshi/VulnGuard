@@ -157,6 +157,16 @@ function safeTarget(session: ScanSession): string {
 export function toScanSummary(session: ScanSession): ScanSummary {
   const s = session.summary || { critical: 0, high: 0, medium: 0, low: 0, passed: 0 }
   const hasResults = s.critical > 0 || s.high > 0 || s.medium > 0 || s.low > 0
+
+  // Compute scanner stats from session scanner info (errors.length > 0 = failed)
+  let scannerStats: { total: number; success: number; failed: number } | undefined
+  if (session.scanners && session.scanners.length > 0) {
+    const total = session.scanners.length
+    const success = session.scanners.filter(sc => sc.errors.length === 0).length
+    const failed = total - success
+    scannerStats = { total, success, failed }
+  }
+
   return {
     id: session.id,
     target: safeTarget(session),
@@ -166,6 +176,7 @@ export function toScanSummary(session: ScanSession): ScanSummary {
     date: session.createdAt,
     engine: session.scannerEngine,
     summary: hasResults ? session.summary : undefined,
+    scannerStats,
   }
 }
 

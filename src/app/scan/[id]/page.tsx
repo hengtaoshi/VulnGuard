@@ -183,6 +183,12 @@ function ExecutiveSummary({ scan, aggregation }: { scan: ScanDetail; aggregation
     { label: "通过 (Passed)", count: summary.passed, color: "text-emerald-500", bg: "bg-emerald-500/10", border: "border-emerald-500/30" },
   ]
 
+  // Scanner execution summary
+  const scanners = scan.scanners
+  const scannerTotal = scanners?.length ?? 0
+  const scannerSuccess = scanners?.filter(s => s.errors.length === 0).length ?? 0
+  const scannerFailed = scannerTotal - scannerSuccess
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
@@ -194,6 +200,27 @@ function ExecutiveSummary({ scan, aggregation }: { scan: ScanDetail; aggregation
           <p className="text-xs text-muted-foreground">Executive Summary</p>
         </div>
       </div>
+
+      {/* Scanner health bar */}
+      {scannerTotal > 0 && (
+        <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs ${
+          scannerFailed > 0 ? "bg-red-500/10 border border-red-500/20" : "bg-emerald-500/10 border border-emerald-500/20"
+        }`}>
+          {scannerFailed > 0 ? (
+            <AlertCircle className="h-3.5 w-3.5 text-red-500 shrink-0" />
+          ) : (
+            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+          )}
+          <span className="text-muted-foreground">
+            扫描引擎：
+            <span className={scannerSuccess > 0 ? "text-emerald-500 font-medium" : ""}>{scannerSuccess} 成功</span>
+            {scannerFailed > 0 && (
+              <span className="text-red-500 font-medium">，{scannerFailed} 失败</span>
+            )}
+            <span className="text-muted-foreground">／共 {scannerTotal} 个</span>
+          </span>
+        </div>
+      )}
 
       <div className="grid gap-3 grid-cols-2 sm:grid-cols-5">
         {items.map(item => (

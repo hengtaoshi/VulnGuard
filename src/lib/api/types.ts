@@ -24,6 +24,12 @@ export interface ScanSummary {
     low: number
     passed: number
   }
+  /** 扫描器执行统计 */
+  scannerStats?: {
+    total: number
+    success: number
+    failed: number
+  }
 }
 
 export interface Vulnerability {
