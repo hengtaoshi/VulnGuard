@@ -462,6 +462,15 @@ export default function SettingsPage() {
                 onChange={v => setSettings(s => ({ ...s, deepseekModel: v }))}
               />
             </div>
+
+            {/* 测试连接按钮 */}
+            <div className="pt-2">
+              <TestLlmButton
+                apiKey={settings.deepseekApiKey}
+                baseUrl={settings.deepseekBaseUrl}
+                model={settings.deepseekModel}
+              />
+            </div>
           </CardContent>
         </Card>
 
@@ -646,6 +655,52 @@ export default function SettingsPage() {
         error={updateError}
         onRetry={handleCheckUpdate}
       />
+    </div>
+  )
+}
+
+// ─── DeepSeek 连接测试按钮 ─────────────────────────────────────────────
+
+function TestLlmButton({ apiKey, baseUrl, model }: { apiKey: string; baseUrl: string; model: string }) {
+  const [state, setState] = useState<"idle" | "testing" | "ok" | "fail">("idle")
+  const [msg, setMsg] = useState("")
+
+  const test = async () => {
+    if (!apiKey) { setState("fail"); setMsg("请先填写 API Key"); return }
+    setState("testing"); setMsg("")
+    try {
+      const res = await fetch("/api/settings/test-llm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apiKey, baseUrl, model }),
+      })
+      const data = await res.json()
+      if (data.ok) { setState("ok"); setMsg(`连接成功 (${data.model})`) }
+      else { setState("fail"); setMsg(data.error || "测试失败") }
+    } catch (e) {
+      setState("fail"); setMsg("网络请求失败")
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <button
+        onClick={test}
+        disabled={state === "testing"}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border/60 text-xs font-medium hover:bg-accent transition-colors disabled:opacity-50"
+      >
+        {state === "testing" ? (
+          <><Loader2 className="h-3 w-3 animate-spin" /> 测试中...</>
+        ) : (
+          <><Zap className="h-3 w-3" /> 测试连接</>
+        )}
+      </button>
+      {msg && (
+        <p className={`text-xs flex items-center gap-1 ${state === "ok" ? "text-emerald-500" : "text-destructive"}`}>
+          {state === "ok" ? <CheckCircle2 className="h-3 w-3" /> : <AlertCircle className="h-3 w-3" />}
+          {msg}
+        </p>
+      )}
     </div>
   )
 }
