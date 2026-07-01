@@ -86,17 +86,17 @@ function selectScannersByRules(
 
   // Java
   if (configNames.has("hasMavenPom") || configNames.has("hasGradle")) {
-    selected.push("dependency-check")
+    selected.push("osv-scanner")
   }
 
   // Go
   if (configNames.has("hasGoMod")) {
-    selected.push("dependency-check")
+    selected.push("osv-scanner")
   }
 
   // Rust
   if (configNames.has("hasCargoToml")) {
-    selected.push("dependency-check")
+    selected.push("osv-scanner")
   }
 
   // C/C++
@@ -111,7 +111,7 @@ function selectScannersByRules(
 
   // .NET
   if (langs.has("csharp") || configNames.has("hasCsproj")) {
-    selected.push("dependency-check")
+    selected.push("osv-scanner")
   }
 
   // ── CodeQL（语义 SAST，覆盖多语言） ──────────────────────────────────
@@ -373,7 +373,7 @@ async function executeScanners(
   // ── 确定性去重 ──────────────────────────────────────────────────────
   // 真实 CVE 扫描器（产生如 CVE-2024-12345 格式的编号）
   const REAL_CVE_SCANNERS = new Set([
-    "trivy", "npm-audit", "pip-audit", "dependency-check",
+    "trivy", "npm-audit", "pip-audit",
     "cve-cpp", "swift", "osv-scanner", "nuclei",
   ])
 

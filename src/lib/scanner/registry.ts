@@ -17,7 +17,7 @@ import { runSwiftScan } from "./swift-scanner"
 import { runTrufflehogScan } from "./trufflehog-scanner"
 import { runScorecardScan } from "./scorecard-scanner"
 import { runOsvScan } from "./osv-scanner"
-import { runDependencyCheckScan } from "./dependency-check"
+
 import { runCodeqlScan } from "./codeql-scanner"
 
 const { existsSync } = require("fs") as typeof import("fs")
@@ -33,7 +33,7 @@ function archiveExtracted(): boolean {
 const BUNDLED_SCANNERS = new Set([
   "semgrep", "gitleaks", "bandit", "pip-audit", "checkov",
   "trivy", "nuclei", "trufflehog", "osv-scanner", "scorecard",
-  "dependency-check", "codeql",
+  "codeql",
 ])
 
 /** Quick binary check — file existence + optional PATH fallback via `where` */
@@ -145,21 +145,6 @@ const scanners: Scanner[] = [
     category: "dependency",
     isAvailable: () => archiveExtracted() && existsSync(join(TOOLS_BIN, "osv-scanner.exe")),
     scan: (targetPath: string) => runOsvScan(targetPath),
-  },
-  {
-    name: "dependency-check",
-    displayName: "Dependency-Check",
-    category: "dependency",
-    isAvailable: () => {
-      if (!archiveExtracted()) return false
-      if (existsSync(join(TOOLS_BIN, "dependency-check.bat"))) return true
-      if (existsSync(join(TOOLS_BIN, "dependency-check.sh"))) return true
-      // 归档内比预期多一层：dependency-check/dependency-check/bin/
-      if (existsSync(join(TOOLS_DIR, "dependency-check", "dependency-check", "bin", "dependency-check.bat"))) return true
-      if (existsSync(join(TOOLS_DIR, "dependency-check", "bin", "dependency-check.bat"))) return true
-      return binExists("dependency-check")
-    },
-    scan: (targetPath: string) => runDependencyCheckScan(targetPath),
   },
   {
     name: "codeql",

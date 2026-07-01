@@ -87,12 +87,9 @@ function main() {
   log("[2/7] Creating directory structure...")
   mkdirSync(APP_DIR, { recursive: true })
   mkdirSync(join(APP_DIR, "tools", "bin"), { recursive: true })
-  mkdirSync(join(APP_DIR, "tools", "dependency-check"), { recursive: true })
   mkdirSync(join(APP_DIR, "tools", "codeql-queries"), { recursive: true })
-  mkdirSync(join(APP_DIR, ".nvd-cache", "data"), { recursive: true })
   mkdirSync(join(APP_DIR, "data", "uploads"), { recursive: true })
   mkdirSync(join(APP_DIR, ".scans"), { recursive: true })
-  mkdirSync(join(APP_DIR, ".dc-report"), { recursive: true })
 
   // ── [3/7] Copy Next.js standalone output ──────────────────────────────
   log("[3/7] Copying Next.js standalone app...")
@@ -130,18 +127,6 @@ function main() {
       if (entry.name.endsWith(".zip") || entry.name.endsWith(".tar.gz")) return false
       return true
     })
-  }
-
-  // tools/dependency-check/ — full OWASP Dependency-Check installation
-  if (existsSync(join(ROOT, "tools", "dependency-check"))) {
-    copyRecursive(
-      join(ROOT, "tools", "dependency-check"),
-      join(APP_DIR, "tools", "dependency-check"),
-      (path, entry) => {
-        if (entry.name.endsWith(".zip")) return false
-        return true
-      }
-    )
   }
 
   // tools/codeql-queries/ -- CodeQL query repository

@@ -23,7 +23,6 @@ const BUNDLED_SCANNERS = [
   { name: "osv-scanner", label: "OSV-Scanner", desc: "依赖漏洞扫描" },
   { name: "scorecard", label: "Scorecard", desc: "开源安全评估" },
   { name: "pip-audit", label: "pip-audit", desc: "Python 依赖审计" },
-  { name: "dependency-check", label: "Dependency-Check", desc: "Java/.NET SCA" },
   { name: "codeql", label: "CodeQL", desc: "语义代码分析" },
 ]
 

@@ -42,7 +42,7 @@ ${scannerList}
 决策规则:
 1. **SAST 扫描器**: semgrep（多语言通用）、bandit（仅 Python）、bearer（隐私数据流，仅 Linux/macOS）、codeql（语义分析）
 2. **Secret 扫描器**: gitleaks（快速）、trufflehog（深度，更多检测器）
-3. **SCA/依赖扫描器**: npm-audit（JS/TS）、pip-audit（Python）、dependency-check（Java/Go/Rust/C#/.NET）、cve-cpp（C/C++ Conan/vcpkg）、swift（Swift）、osv-scanner（多生态通用）
+3. **SCA/依赖扫描器**: npm-audit（JS/TS）、pip-audit（Python）、cve-cpp（C/C++ Conan/vcpkg）、swift（Swift）、osv-scanner（Java/Go/Rust/C#/.NET/多生态通用）
 4. **文件系统/IaC**: trivy（全面）、checkov（IaC 专项）、nuclei（模板化检测）
 5. **供应链**: scorecard（安全实践评分）
 6. 对于全量扫描（all 引擎），选择所有可用扫描器
@@ -223,17 +223,17 @@ export function createFallbackPlan(
 
   // Java
   if (configNames.has("hasMavenPom") || configNames.has("hasGradle")) {
-    selected.push("dependency-check")
+    selected.push("osv-scanner")
   }
 
   // Go
   if (configNames.has("hasGoMod")) {
-    selected.push("dependency-check")
+    selected.push("osv-scanner")
   }
 
   // Rust
   if (configNames.has("hasCargoToml")) {
-    selected.push("dependency-check")
+    selected.push("osv-scanner")
   }
 
   // C/C++
@@ -248,7 +248,7 @@ export function createFallbackPlan(
 
   // .NET
   if (langs.has("csharp") || configNames.has("hasCsproj")) {
-    selected.push("dependency-check")
+    selected.push("osv-scanner")
   }
 
   // CodeQL

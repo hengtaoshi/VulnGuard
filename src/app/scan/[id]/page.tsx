@@ -27,7 +27,6 @@ const scannerIcons: Record<string, React.ReactNode> = {
   gitleaks: <Lock className="h-3 w-3" />,
   "npm-audit": <Package className="h-3 w-3" />,
   "pip-audit": <Package className="h-3 w-3" />,
-  "dependency-check": <Package className="h-3 w-3" />,
   trivy: <FileScan className="h-3 w-3" />,
 
   bandit: <Shield className="h-3 w-3" />,
@@ -259,7 +258,7 @@ function parseScannerDecisions(reasoning: string): { name: string; matched: bool
   const decisions: { name: string; matched: boolean; rationale: string }[] = []
   // 匹配形如: "- scannerName：匹配|跳过|不匹配。原因..."
   const scannerNames = ["semgrep", "gitleaks", "bandit", "npm-audit", "pip-audit",
-    "dependency-check", "trivy", "checkov", "nuclei"]
+    "trivy", "checkov", "nuclei"]
   const lines = reasoning.split("\n")
   for (const line of lines) {
     const trimmed = line.replace(/^-\s*/, "").trim()

@@ -12,7 +12,6 @@ const scannerIcons: Record<string, React.ReactNode> = {
   gitleaks: <Lock className="h-3 w-3" />,
   "npm-audit": <File className="h-3 w-3" />,
   "pip-audit": <File className="h-3 w-3" />,
-  "dependency-check": <File className="h-3 w-3" />,
   trivy: <File className="h-3 w-3" />,
   checkov: <Shield className="h-3 w-3" />,
   nuclei: <Activity className="h-3 w-3" />,

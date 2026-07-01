@@ -3,7 +3,7 @@
  *
  * OSV-Scanner 基于 Open Source Vulnerabilities (OSV.dev) 数据库，
  * 覆盖 npm、PyPI、Go、Maven、NuGet、RubyGems、Cargo 等生态。
- * 与 npm-audit / pip-audit / dependency-check 互补。
+ * 与 npm-audit / pip-audit 互补。
  *
  * 依赖: tools/bin/osv-scanner.exe
  * 下载: https://github.com/google/osv-scanner

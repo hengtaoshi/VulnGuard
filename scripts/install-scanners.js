@@ -344,64 +344,8 @@ async function main() {
     log("CodeQL packs", "already available (local repo)")
   }
 
-  // ── 4. Dependency-Check ─────────────────────────────────────────────────
-  console.log(`\n  ${COLORS.cyan}[4/6]${COLORS.reset} Dependency-Check → tools/dependency-check/\n`)
-  const dcDir = join(TOOLS_DIR, "dependency-check", "bin")
-  const dcBat = join(dcDir, "dependency-check.bat")
-  const dcSh = join(dcDir, "dependency-check.sh")
-  if (existsSync(dcBat) || existsSync(dcSh)) {
-    log("Dependency-Check", "already installed")
-  } else {
-    // Download and extract OWASP Dependency-Check
-    try {
-      const dcUrl = IS_WIN
-        ? "https://github.com/jeremylong/DependencyCheck/releases/latest/download/dependency-check-12.1.0-release.zip"
-        : "https://github.com/jeremylong/DependencyCheck/releases/latest/download/dependency-check-12.1.0-release.tar.gz"
-      const tmpFile = join(TOOLS_DIR, "dc-download")
-      log("Dependency-Check", "downloading (~280 MB)...")
-      await download(dcUrl, tmpFile + (IS_WIN ? ".zip" : ".tar.gz"))
-      log("Dependency-Check", "extracting...")
-      if (!existsSync(join(TOOLS_DIR, "dependency-check"))) mkdirSync(join(TOOLS_DIR, "dependency-check"), { recursive: true })
-      if (IS_WIN) {
-        execSync(`tar -xf "${tmpFile}.zip" -C "${TOOLS_DIR}" 2>nul`, { stdio: "pipe", timeout: 120000 })
-      } else {
-        execSync(`tar -xzf "${tmpFile}.tar.gz" -C "${TOOLS_DIR}" 2>/dev/null`, { stdio: "pipe", timeout: 120000 })
-      }
-      try { unlinkSync(tmpFile + (IS_WIN ? ".zip" : ".tar.gz")) } catch {}
-      // The release extracts to a versioned directory; copy to tools/dependency-check/
-      const extractedDirs = require("fs").readdirSync(TOOLS_DIR).filter(d => d.startsWith("dependency-check-") && d !== "dependency-check")
-      if (extractedDirs.length > 0) {
-        // Already extracted to tools/dependency-check-X.Y/; move contents
-        const srcDir = join(TOOLS_DIR, extractedDirs[0])
-        const dstDir = join(TOOLS_DIR, "dependency-check")
-        execSync(`${IS_WIN ? "move /Y" : "mv"} "${srcDir}"/* "${dstDir}/" 2>${IS_WIN ? "nul" : "/dev/null"}`, { stdio: "pipe" })
-        try { execSync(`${IS_WIN ? "rmdir /S /Q" : "rm -rf"}" "${srcDir}"`) } catch {}
-      }
-      if (existsSync(dcBat) || existsSync(dcSh)) {
-        log("Dependency-Check", "installed")
-      } else {
-        fail("Dependency-Check", "extraction failed")
-      }
-    } catch (err) {
-      fail("Dependency-Check", `download/install failed: ${err.message}`)
-    }
-  }
-
-  // ── 5/7. NVD Database for Dependency-Check ──────────────────────────────
-  console.log(`\n  ${COLORS.cyan}[5/7]${COLORS.reset} NVD Database → .nvd-cache/data/\n`)
-  if (existsSync(dcBat) || existsSync(dcSh)) {
-    log("NVD Database", "downloading (first run may take 10-20 minutes)...")
-    try {
-      const nvdScript = join(__dirname, "..", "download-nvd.bat")
-      execSync(`"${nvdScript}"`, { timeout: 1200000, stdio: "pipe" })
-      log("NVD Database", "ready")
-    } catch (err) {
-      fail("NVD Database", `download failed: ${err.message}`)
-    }
-  }
-
-  // ── 6/7. Semgrep rules update ───────────────────────────────────────────
-  console.log(`\n  ${COLORS.cyan}[6/7]${COLORS.reset} Semgrep rules update\n`)
+  // ── 4. Semgrep rules update ──────────────────────────────────────────────
+  console.log(`\n  ${COLORS.cyan}[4/4]${COLORS.reset} Semgrep rules update\n`)
   const rulesDir = join(TOOLS_DIR, "semgrep-rules")
   const rulesFile = join(rulesDir, "security.yaml")
 
@@ -444,17 +388,8 @@ async function main() {
     }
   }
 
-  // ── 6. Java check + Nuclei templates ────────────────────────────────────
-  console.log(`\n  ${COLORS.cyan}[6/6]${COLORS.reset} Final checks\n`)
-
-  // Java
-  const javaVer = exec("java -version 2>&1")
-  if (javaVer) {
-    const v = javaVer.match(/(\d+\.\d+)/)?.[0] || "?"
-    log("Java", `found (${v})`)
-  } else {
-    fail("Java", "not found — Dependency-Check needs Java 11+")
-  }
+  // ── 5. Nuclei templates ─────────────────────────────────────────────────
+  console.log(`\n  ${COLORS.cyan}[5/5]${COLORS.reset} Final checks\n`)
 
   // Nuclei templates
   const nucleiBin = join(BIN_DIR, "nuclei" + (IS_WIN ? ".exe" : ""))
@@ -470,7 +405,7 @@ async function main() {
   // ── Summary ──────────────────────────────────────────────────────────
   console.log(`\n  ${COLORS.cyan}══════════════════════════════════════════════${COLORS.reset}`)
   console.log(`  ${COLORS.green}  Setup complete!${COLORS.reset}`)
-  console.log(`  ${COLORS.dim}  7/7 steps finished${COLORS.reset}`)
+  console.log(`  ${COLORS.dim}  5/5 steps finished${COLORS.reset}`)
   console.log(`  ${COLORS.dim}  Start: npm run dev${COLORS.reset}`)
   console.log(`  ${COLORS.dim}  Visit: http://localhost:3000${COLORS.reset}`)
   console.log(`  ${COLORS.cyan}══════════════════════════════════════════════${COLORS.reset}\n`)

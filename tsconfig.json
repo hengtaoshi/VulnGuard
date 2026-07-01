@@ -42,7 +42,6 @@
     ".trivy-cache",
     ".next",
     "tools/bin",
-    "tools/codeql-queries",
-    "tools/dependency-check"
+    "tools/codeql-queries"
   ]
 }

@@ -86,8 +86,8 @@ const SKIP_DIRS = new Set([
   "node_modules", ".git", ".svn", ".hg", ".next", ".nuxt",
   "dist", "build", "target", "out", "coverage",
   "__pycache__", ".pytest_cache", ".mypy_cache", ".venv", "venv",
-  ".trivy-cache", ".scans", ".dc-report", ".terraform",
-  ".cache", ".vscode", ".idea", "tools/bin", "dependency-check", "data/uploads",
+  ".trivy-cache", ".scans", ".terraform",
+  ".cache", ".vscode", ".idea", "tools/bin", "data/uploads",
 ])
 
 // ─── 输出类型 ──────────────────────────────────────────────────────────────

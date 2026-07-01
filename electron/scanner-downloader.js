@@ -22,7 +22,7 @@ const ARCHIVE_URL = "https://github.com/hengtaoshi/VulnGuard/releases/download/v
 const BUNDLED_SCANNERS = [
   "gitleaks", "trivy", "nuclei", "trufflehog", "osv-scanner", "scorecard",
   "semgrep", "bandit", "checkov", "pip-audit",
-  "dependency-check", "codeql",
+  "codeql",
 ]
 
 // Marker file written after successful extraction
@@ -192,7 +192,7 @@ async function ensureArchiveExtracted(toolsDir, sendProgress) {
       }
     }
 
-    // Extract to toolsDir — archive has bin/ codeql/ dependency-check/ at root
+    // Extract to toolsDir — archive has bin/ codeql/ at root
     execSync(`tar -xzf "${tmp}" -C "${toolsDir}"`, { stdio: "pipe", timeout: 300000 })
     try { unlinkSync(tmp) } catch { void 0 }
 
@@ -208,8 +208,8 @@ async function ensureArchiveExtracted(toolsDir, sendProgress) {
     // Set +x on Linux
     if (!IS_WIN) {
       execSync(`chmod +x "${join(binDir, "*")}"`, { stdio: "pipe" })
-      // Also handle codeql and dependency-check scripts
-      for (const dir of ["codeql", "dependency-check"]) {
+      // Also handle codeql scripts
+      for (const dir of ["codeql"]) {
         const d = join(toolsDir, dir)
         if (existsSync(d)) execSync(`find "${d}" -type f -exec chmod +x {} \\; 2>/dev/null`, { stdio: "pipe" })
       }
@@ -223,7 +223,7 @@ async function ensureArchiveExtracted(toolsDir, sendProgress) {
   } catch (err) {
     try { unlinkSync(tmp) } catch { void 0 }
     // Clean up partially extracted files so retry starts fresh
-    for (const dir of ["bin", "codeql", "dependency-check"]) {
+    for (const dir of ["bin", "codeql"]) {
       const p = join(toolsDir, dir)
       try { rmSync(p, { recursive: true, force: true }) } catch { void 0 }
     }
@@ -242,12 +242,6 @@ function getScannerPath(name, toolsDir) {
     case "osv-scanner": case "scorecard": case "semgrep":
     case "bandit": case "checkov": case "pip-audit":
       return join(binDir, name + ".exe")
-    case "dependency-check": {
-      // 归档内多一层嵌套：dependency-check/dependency-check/bin/
-      const nested = join(toolsDir, "dependency-check", "dependency-check", "bin", IS_WIN ? "dependency-check.bat" : "dependency-check.sh")
-      if (existsSync(nested)) return nested
-      return join(toolsDir, "dependency-check", "bin", IS_WIN ? "dependency-check.bat" : "dependency-check.sh")
-    }
     case "codeql":
       return join(toolsDir, "codeql", "codeql", "codeql" + (IS_WIN ? ".exe" : ""))
     default:

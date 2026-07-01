@@ -513,8 +513,8 @@ function matchChinese(
     }
   }
 
-  // 5. npm audit / pip audit / dependency check 等扫描器
-  if (source === "npm-audit" || source === "pip-audit" || source === "dependency-check") {
+  // 5. npm audit / pip audit 等扫描器
+  if (source === "npm-audit" || source === "pip-audit") {
     const pkg = vuln.name || ""
     return {
       description: `检测到依赖包 ${pkg} 存在已知安全漏洞。建议升级到修复版本。`,

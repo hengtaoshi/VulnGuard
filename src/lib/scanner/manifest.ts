@@ -110,18 +110,6 @@ export const SCANNER_MANIFEST: ScannerManifestEntry[] = [
     limitations: "Network-bound, depends on template database updates. May require network access for template downloads.",
   },
   {
-    name: "dependency-check",
-    displayName: "Dependency-Check",
-    category: "dependency",
-    supportedModes: ["source"],
-    description: "OWASP Dependency-Check — industry-standard Software Composition Analysis (SCA) tool. Scans project dependencies for known CVEs across Java (Maven, Gradle), .NET, Python, Ruby, Node.js, Go, Rust (Cargo), and C/C++. Identifies vulnerable library versions and suggests upgrades.",
-    scanTypes: ["Java Maven/Gradle CVEs", "Go Module CVEs", "Rust Cargo CVEs", ".NET NuGet CVEs", "C/C++ Library CVEs", "Known Vulnerable Components"],
-    typicalDuration: "medium",
-    priority: 3,
-    techIndicators: ["pom.xml", "build.gradle", "go.mod", "Cargo.toml", ".csproj", "packages.config"],
-    limitations: "Requires Java Runtime (JRE) 8+. First run downloads NVD database which can take 10+ minutes. Use --noupdate flag for subsequent runs to skip database updates.",
-  },
-  {
     name: "cve-cpp",
     displayName: "C/C++ CVE Scanner",
     category: "dependency",
