@@ -62,21 +62,12 @@ select optgroup {
   background: hsl(228, 25%, 30%);
 }
 
-/* Dark-theme number input spinners */
-input[type="number"] {
-  -moz-appearance: textfield;
-}
+/* Hide number input spinners */
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button {
-  opacity: 1;
-  height: 1.6em;
-  width: 1.2em;
-  background: hsl(var(--muted));
-  border: 1px solid hsl(var(--border));
-  border-radius: 4px;
-  cursor: pointer;
+  -webkit-appearance: none;
+  margin: 0;
 }
-input[type="number"]::-webkit-inner-spin-button:hover,
-input[type="number"]::-webkit-outer-spin-button:hover {
-  background: hsl(var(--accent));
+input[type="number"] {
+  -moz-appearance: textfield;
 }
