@@ -20,7 +20,7 @@ import type { CweCoverage, ScannerCoverage, BenchmarkScore, BenchmarkData } from
  */
 
 // SCA 扫描器（通过 CVE 数据库覆盖全部有 CVE 的 CWE）
-const CVE_SCANNERS = ["osv-scanner", "npm-audit", "pip-audit", "trivy"]
+const CVE_SCANNERS = ["osv-scanner", "npm-audit", "pip-audit", "trivy", "cve-cpp", "swift"]
 
 export const CWE_LIST: CweCoverage[] = [
   // ── CWE Top 25 (2024) ──────────────────────────────────────────────────
@@ -75,6 +75,8 @@ export const SCANNER_COVERAGE: ScannerCoverage[] = [
   { name: "osv-scanner", displayName: "OSV-Scanner",       category: "dependency",  coverageType: "cve-db",  cweCount: 0, cweCountDisplay: "全部", ecosystemCount: 12, sourceUrl: "https://osv.dev" },
   { name: "npm-audit",   displayName: "npm audit",         category: "dependency",  coverageType: "cve-db",  cweCount: 0, cweCountDisplay: "全部", ecosystemCount: 1,  sourceUrl: "https://docs.npmjs.com/auditing-package-dependencies-for-security-vulnerabilities" },
   { name: "pip-audit",   displayName: "pip-audit",         category: "dependency",  coverageType: "cve-db",  cweCount: 0, cweCountDisplay: "全部", ecosystemCount: 1,  sourceUrl: "https://pypi.org/project/pip-audit/" },
+  { name: "cve-cpp",     displayName: "C/C++ CVE",          category: "dependency",  coverageType: "cve-db",  cweCount: 0, cweCountDisplay: "全部", ecosystemCount: 2,  sourceUrl: "https://osv.dev" },
+  { name: "swift",       displayName: "Swift Package",      category: "dependency",  coverageType: "cve-db",  cweCount: 0, cweCountDisplay: "全部", ecosystemCount: 1,  sourceUrl: "https://osv.dev" },
   // ── 文件系统 ──
   { name: "trivy",       displayName: "Trivy",             category: "filesystem",  coverageType: "cve-db",  cweCount: 0, cweCountDisplay: "全部", ecosystemCount: 12, sourceUrl: "https://trivy.dev" },
   // ── IaC ──
